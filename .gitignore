@@ -147,3 +147,23 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# --- party-game 项目专用 ---
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CloudBase CLI 本地状态/缓存，可能包含登录凭证，绝不能进仓库
+.cloudbase/
+
+# 云函数构建产物（esbuild 打包出的 dist/、以及 npm install 的依赖）
+functions/*/dist/
+functions/*/node_modules/
+
+# 常见的密钥/证书文件后缀，防止手滑把私钥提交进来
+*.pem
+*.key
+*.p12
+*.pfx
+

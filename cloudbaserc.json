@@ -1,0 +1,24 @@
+{
+  "version": "2.0",
+  "envId": "party-game-d5g0uxms1b4a800c7",
+  "functions": [
+    {
+      "name": "hello",
+      "dir": "./functions/hello/dist",
+      "timeout": 5,
+      "runtime": "Nodejs20.19",
+      "memorySize": 128,
+      "handler": "index.main",
+      "installDependency": true
+    },
+    {
+      "name": "room",
+      "dir": "./functions/room/dist",
+      "timeout": 10,
+      "runtime": "Nodejs20.19",
+      "memorySize": 256,
+      "handler": "index.main",
+      "installDependency": true
+    }
+  ]
+}

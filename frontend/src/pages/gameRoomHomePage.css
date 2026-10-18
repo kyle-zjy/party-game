@@ -1,0 +1,87 @@
+.mg-home-page {
+  padding: 32px 20px calc(32px + env(safe-area-inset-bottom, 0px));
+  gap: 18px;
+  max-width: 430px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mg-home-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+}
+
+.mg-home-title {
+  font-size: 34px;
+  margin: 0;
+  color: var(--mg-text);
+  text-shadow: 0 0 24px var(--mg-purple-glow);
+}
+
+.mg-home-card {
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mg-field-label {
+  font-size: 13px;
+  color: var(--mg-text-muted);
+}
+
+.mg-input {
+  width: 100%;
+  font-size: 18px;
+  padding: 14px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid var(--mg-border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--mg-text);
+  box-sizing: border-box;
+}
+.mg-input:focus {
+  outline: 2px solid var(--mg-purple);
+  outline-offset: -1px;
+}
+.mg-input::placeholder {
+  color: var(--mg-text-faint);
+}
+
+/* 首页也需要 .mg-btn-icon/.mg-error-toast——这两个类定义在
+   game/ui/gameBoardPage.css 里，首页没有引入那个文件（避免把整个棋盘页
+   样式表都拖进首页 bundle），所以这里补一份等价定义，保持视觉一致。 */
+.mg-btn-icon {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--mg-border);
+  color: var(--mg-text);
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+}
+.mg-error-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(255, 96, 124, 0.14);
+  border: 1px solid var(--mg-coral);
+  color: var(--mg-coral);
+  border-radius: var(--mg-radius-md);
+  padding: 10px 12px;
+  font-size: 13px;
+}

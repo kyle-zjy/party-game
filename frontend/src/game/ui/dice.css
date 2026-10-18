@@ -1,0 +1,67 @@
+.mg-dice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+.mg-dice-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.mg-dice-face {
+  width: 72px;
+  height: 72px;
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+  transition: transform calc(0.08s * var(--motion, 1)) linear;
+}
+
+.mg-dice-body {
+  fill: #221a3d;
+  stroke: var(--mg-gold, #f2c46c);
+  stroke-width: 2.5;
+}
+
+.mg-dice-pip {
+  fill: var(--mg-text, #f3eefc);
+}
+
+.mg-dice-face-glow .mg-dice-body {
+  stroke: var(--mg-gold, #f2c46c);
+  stroke-width: 4;
+  fill: #3a2a12;
+}
+.mg-dice-face-glow .mg-dice-pip {
+  fill: var(--mg-gold, #f2c46c);
+}
+.mg-dice-face-glow {
+  filter: drop-shadow(0 0 calc(14px * var(--motion, 1)) var(--mg-gold-glow, rgba(242, 196, 108, 0.6)))
+    drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+}
+
+.mg-dice-rolling .mg-dice-face {
+  animation: mg-dice-spin calc(0.5s * var(--motion, 1)) linear infinite;
+}
+
+@keyframes mg-dice-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(180deg) scale(1.08);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.mg-dice-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mg-text-muted, #ab9fd4);
+}

@@ -1,0 +1,509 @@
+/*
+ * `#root`（index.css）给所有页面统一加了 16px/32px 的上下左右内边距，这对
+ * 大厅等普通卡片页面没问题，但正式棋盘页需要"满屏固定高度 + 内部自己
+ * 滚动"的布局才能保证操作区永远可见——所以这里用负 margin 抵消 `#root`
+ * 的内边距，把游戏页面撑满整个视口，不依赖修改 `#root` 本身的全局样式
+ * （那样会影响其它仍在使用素色卡片风格的页面）。
+ */
+.mg-game-page {
+  margin: -16px -16px -32px;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+  gap: 10px;
+  max-width: 430px;
+  width: calc(100% + 32px);
+  height: 100svh;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* 可滚动中间区域——棋盘、主持人气泡、喝酒提醒、次级导航都在这里滚动，
+   底部操作区（.mg-bottom-dock）永远留在视口内，不随内容滚走。 */
+.mg-scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 4px;
+}
+
+/* ---------- Top bar ---------- */
+.mg-topbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.mg-topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mg-topbar-tarot {
+  cursor: pointer;
+  border: none;
+  color: var(--mg-gold);
+}
+.mg-btn-icon {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--mg-border);
+  color: var(--mg-text);
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* 当前轮次信息：用户反馈"缺乏明显视觉层级"——当前玩家昵称和阶段现在是
+   整条页面里字号最大、对比度最强的元素；轮到自己时额外加一圈金色光晕
+   边框 + "轮到你了"徽标，和"等待中"的灰暗状态拉开明显区别。 */
+.mg-topbar-turn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--mg-radius-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--mg-border);
+}
+.mg-topbar-turn-mine {
+  background: linear-gradient(135deg, rgba(242, 196, 108, 0.18), rgba(139, 92, 246, 0.1));
+  border-color: var(--mg-gold);
+  box-shadow: 0 0 20px var(--mg-gold-glow);
+}
+.mg-topbar-turn-name {
+  font-size: 22px;
+  color: var(--mg-text);
+  line-height: 1;
+}
+.mg-topbar-turn-mine .mg-topbar-turn-name {
+  color: var(--mg-gold);
+}
+.mg-topbar-turn-phase {
+  font-size: 13px;
+  color: var(--mg-text-muted);
+}
+.mg-topbar-turn-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #241704;
+  background: var(--mg-gold);
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: mg-badge-pulse calc(1.6s * var(--motion, 1)) ease-in-out infinite;
+}
+@keyframes mg-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-topbar-turn-badge { animation: none; }
+}
+
+/* ---------- Host banner ---------- */
+.mg-host-banner {
+  display: flex;
+  gap: 10px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.14), rgba(255, 96, 124, 0.08));
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-md);
+  padding: 10px 12px;
+}
+.mg-host-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+}
+.mg-host-text {
+  flex: 1;
+  min-width: 0;
+}
+.mg-host-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.mg-host-detail-toggle {
+  background: none;
+  border: none;
+  color: var(--mg-teal);
+  font-size: 12px;
+  padding: 4px 0 0;
+  cursor: pointer;
+}
+.mg-host-detail {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--mg-text-muted);
+  line-height: 1.5;
+}
+
+/* ---------- Resources bar ---------- */
+.mg-resources {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.mg-resource-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--mg-border);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.mg-resource-btn {
+  cursor: pointer;
+  color: var(--mg-text);
+}
+.mg-resource-value {
+  font-size: 15px;
+  font-weight: 700;
+}
+.mg-resource-pulse {
+  animation: mg-resource-pulse calc(0.5s * var(--motion, 1)) ease;
+}
+@keyframes mg-resource-pulse {
+  0% { box-shadow: 0 0 0 0 var(--mg-gold-glow); }
+  40% { box-shadow: 0 0 0 4px var(--mg-gold-glow); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-resource-pulse { animation: none; }
+}
+
+/* ---------- Bottom dock ----------
+   不再用 position: sticky + margin-top: auto——.mg-game-page 现在是固定
+   高度（100svh）的 flex 容器，.mg-scroll-area 占满剩余空间并自己滚动，
+   .mg-bottom-dock 作为同级的最后一个 flex 子项天然停在视口底部，
+   不会被手机地址栏/安全区域的高度变化影响，也不会被棋盘或长列表挤走。
+   用户反馈的"操作按钮被底部导航或安全区域遮挡"由此解决：
+   `env(safe-area-inset-bottom)` 仍然保留，确保 iPhone 的手势条不会
+   盖住最下面的按钮。 */
+.mg-bottom-dock {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+}
+
+.mg-action-panel {
+  background: linear-gradient(160deg, var(--mg-surface-raised), var(--mg-surface));
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-lg);
+  padding: 14px;
+}
+.mg-action-panel-center {
+  display: flex;
+  justify-content: center;
+  padding: 18px;
+}
+.mg-action-panel-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px;
+}
+.mg-waiting-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mg-teal);
+  flex-shrink: 0;
+  animation: mg-waiting-blink calc(1.2s * var(--motion, 1)) ease-in-out infinite;
+}
+@keyframes mg-waiting-blink {
+  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-waiting-dot { animation: none; opacity: 0.8; }
+}
+.mg-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mg-action-row {
+  display: flex;
+  gap: 10px;
+}
+.mg-action-row .mg-btn {
+  flex: 1;
+}
+
+.mg-target-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+
+.mg-lady-card-reveal {
+  text-align: center;
+  padding: 10px 0;
+  perspective: 600px;
+}
+.mg-lady-card-name {
+  font-size: 28px;
+  color: var(--mg-gold);
+  text-shadow: 0 0 20px var(--mg-gold-glow);
+  margin: 0 0 6px;
+}
+.mg-card-flip-in {
+  animation: mg-card-flip calc(0.45s * var(--motion, 1)) ease;
+}
+@keyframes mg-card-flip {
+  0% { transform: rotateY(90deg); opacity: 0; }
+  60% { transform: rotateY(-8deg); opacity: 1; }
+  100% { transform: rotateY(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mg-card-flip-in { animation: mg-fade-in calc(0.25s) ease; }
+}
+
+.mg-flip-btn {
+  animation: mg-flip-pulse calc(1.6s * var(--motion, 1)) ease-in-out infinite;
+}
+@keyframes mg-flip-pulse {
+  0%, 100% { box-shadow: 0 6px 20px var(--mg-gold-glow); }
+  50% { box-shadow: 0 6px 32px var(--mg-gold-glow), 0 0 0 4px rgba(242,196,108,0.15); }
+}
+
+.mg-hand-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.mg-tactic-card {
+  flex-shrink: 0;
+  width: 108px;
+  min-height: 92px;
+  background: linear-gradient(160deg, rgba(255, 96, 124, 0.12), var(--mg-surface));
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-sm);
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mg-tactic-card-selected {
+  border-color: var(--mg-gold);
+  box-shadow: 0 0 0 1px var(--mg-gold), 0 0 16px var(--mg-gold-glow);
+}
+.mg-tactic-card-name {
+  font-size: 16px;
+  color: var(--mg-coral);
+}
+.mg-tactic-card-desc {
+  font-size: 11px;
+  line-height: 1.3;
+}
+.mg-tactic-target-selected {
+  border-color: var(--mg-gold) !important;
+  color: var(--mg-gold) !important;
+}
+
+/* ---------- Drink ack tray ---------- */
+.mg-drink-tray {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mg-drink-ack-row {
+  background: rgba(255, 96, 124, 0.08);
+  border: 1px solid rgba(255, 96, 124, 0.3);
+  border-radius: var(--mg-radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mg-drink-ack-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mg-drink-ack-target {
+  font-weight: 700;
+  color: var(--mg-coral);
+}
+.mg-drink-ack-choices {
+  display: flex;
+  gap: 6px;
+}
+.mg-drink-choice-btn {
+  flex: 1;
+  padding: 8px 6px;
+  font-size: 12.5px;
+}
+
+/* ---------- Quick nav pills ---------- */
+.mg-quick-nav {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.mg-quick-nav .mg-pill {
+  cursor: pointer;
+  border: 1px solid var(--mg-border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ---------- Error toast ---------- */
+.mg-error-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(255, 96, 124, 0.14);
+  border: 1px solid var(--mg-coral);
+  color: var(--mg-coral);
+  border-radius: var(--mg-radius-md);
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+/* ---------- Leaderboard / history / tarot drawers ---------- */
+.mg-leaderboard-list, .mg-history-list, .mg-tarot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mg-leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--mg-radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+.mg-leaderboard-row-me {
+  border: 1px solid var(--mg-gold);
+}
+.mg-leaderboard-rank {
+  width: 20px;
+  color: var(--mg-text-muted);
+}
+.mg-leaderboard-name {
+  flex: 1;
+}
+.mg-leaderboard-coins {
+  color: var(--mg-gold);
+}
+.mg-history-row {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: var(--mg-radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  line-height: 1.5;
+}
+.mg-tarot-current {
+  padding: 14px;
+  border-radius: var(--mg-radius-md);
+  background: rgba(139, 92, 246, 0.08);
+}
+.mg-tarot-current-name {
+  font-size: 20px;
+  margin: 4px 0 8px;
+}
+.mg-tarot-row {
+  display: flex;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--mg-radius-sm);
+  font-size: 13px;
+}
+.mg-tarot-row-active {
+  background: rgba(242, 196, 108, 0.12);
+  color: var(--mg-gold);
+}
+.mg-help-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 20px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---------- Quick start overlay ---------- */
+.mg-quickstart-sheet {
+  text-align: center;
+  padding-top: 28px;
+}
+.mg-quickstart-avatar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.mg-quickstart-title {
+  font-size: 14px;
+  color: var(--mg-gold);
+  margin: 0 0 10px;
+}
+.mg-quickstart-message {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0;
+}
+.mg-quickstart-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 18px;
+}
+.mg-quickstart-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mg-border-strong);
+}
+.mg-quickstart-dot-active {
+  background: var(--mg-gold);
+}
+
+/* ---------- Heart attack overlay ---------- */
+.mg-heart-attack-scrim {
+  align-items: center;
+  background: rgba(10, 4, 20, 0.88);
+}
+.mg-heart-attack-burst {
+  text-align: center;
+  max-width: 340px;
+  padding: 24px;
+}
+.mg-heart-attack-title {
+  font-size: 34px;
+  color: var(--mg-coral);
+  text-shadow: 0 0 30px var(--mg-coral-glow);
+  margin: 0 0 10px;
+  animation: mg-heart-pulse calc(0.9s * var(--motion, 1)) ease-in-out infinite;
+}
+@keyframes mg-heart-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+.mg-heart-attack-sub {
+  color: var(--mg-text);
+  font-size: 14px;
+}

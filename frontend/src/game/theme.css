@@ -1,0 +1,223 @@
+/**
+ * Phase C 视觉主题："午夜奇幻酒馆"。
+ *
+ * 设计 token 独立于 `../index.css`（阶段 A/B 的素色卡片风格，Home/大厅页面
+ * 继续使用），游戏内页面（GameBoardPage 及其子组件）专用这套更有氛围感的
+ * 配色与质感。不覆盖/修改 `index.css` 的既有变量，避免影响大厅页面。
+ */
+
+:root {
+  --mg-bg: #101427;
+  --mg-bg-deep: #0a0d1a;
+  --mg-surface: #171c35;
+  --mg-surface-raised: #1e2542;
+  --mg-border: rgba(242, 196, 108, 0.18);
+  --mg-border-strong: rgba(242, 196, 108, 0.4);
+
+  --mg-purple: #8b5cf6;
+  --mg-purple-glow: rgba(139, 92, 246, 0.45);
+  --mg-gold: #f2c46c;
+  --mg-gold-glow: rgba(242, 196, 108, 0.45);
+  --mg-coral: #ff607c;
+  --mg-coral-glow: rgba(255, 96, 124, 0.45);
+  --mg-teal: #48d8cc;
+  --mg-teal-glow: rgba(72, 216, 204, 0.45);
+
+  --mg-text: #f3eefc;
+  --mg-text-muted: #ab9fd4;
+  --mg-text-faint: #6f6693;
+
+  --mg-font-display: 'Noto Serif SC', 'Songti SC', serif;
+  --mg-font-body: system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --mg-font-number: 'Spectral', Georgia, serif;
+
+  --mg-radius-lg: 20px;
+  --mg-radius-md: 14px;
+  --mg-radius-sm: 10px;
+
+  --mg-player-R: #ff607c;
+  --mg-player-G: #48d8cc;
+  --mg-player-B: #8b5cf6;
+  --mg-player-Y: #f2c46c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --mg-motion-scale: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --mg-motion-scale: 1;
+  }
+}
+
+.mg-root {
+  --motion: var(--mg-motion-scale, 1);
+  background: radial-gradient(circle at 20% -10%, rgba(139, 92, 246, 0.25), transparent 55%),
+    radial-gradient(circle at 90% 0%, rgba(255, 96, 124, 0.18), transparent 50%),
+    var(--mg-bg);
+  color: var(--mg-text);
+  font-family: var(--mg-font-body);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mg-root * {
+  box-sizing: border-box;
+}
+
+.mg-display {
+  font-family: var(--mg-font-display);
+  letter-spacing: 0.02em;
+}
+
+.mg-number {
+  font-family: var(--mg-font-number);
+  font-variant-numeric: tabular-nums;
+}
+
+.mg-card {
+  background: linear-gradient(160deg, var(--mg-surface-raised), var(--mg-surface));
+  border: 1px solid var(--mg-border);
+  border-radius: var(--mg-radius-lg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.mg-glow-gold {
+  box-shadow: 0 0 0 1px var(--mg-border-strong), 0 0 24px var(--mg-gold-glow);
+}
+.mg-glow-purple {
+  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.4), 0 0 24px var(--mg-purple-glow);
+}
+.mg-glow-coral {
+  box-shadow: 0 0 0 1px rgba(255, 96, 124, 0.4), 0 0 24px var(--mg-coral-glow);
+}
+.mg-glow-teal {
+  box-shadow: 0 0 0 1px rgba(72, 216, 204, 0.4), 0 0 24px var(--mg-teal-glow);
+}
+
+.mg-btn {
+  font-family: var(--mg-font-body);
+  font-weight: 600;
+  font-size: 16px;
+  border: none;
+  border-radius: var(--mg-radius-md);
+  padding: 14px 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+  touch-action: manipulation;
+}
+.mg-btn:active {
+  transform: scale(calc(1 - 0.03 * var(--motion)));
+}
+.mg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mg-btn-primary {
+  background: linear-gradient(135deg, var(--mg-purple), #6d3ff0);
+  color: #fff;
+  box-shadow: 0 6px 20px var(--mg-purple-glow);
+}
+.mg-btn-gold {
+  background: linear-gradient(135deg, var(--mg-gold), #d9a14a);
+  color: #241704;
+  box-shadow: 0 6px 20px var(--mg-gold-glow);
+}
+.mg-btn-ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--mg-text);
+  border: 1px solid var(--mg-border);
+}
+.mg-btn-danger {
+  background: rgba(255, 96, 124, 0.12);
+  color: var(--mg-coral);
+  border: 1px solid rgba(255, 96, 124, 0.4);
+}
+
+.mg-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--mg-border);
+  color: var(--mg-text-muted);
+}
+
+.mg-muted {
+  color: var(--mg-text-muted);
+}
+.mg-faint {
+  color: var(--mg-text-faint);
+}
+
+.mg-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 14, 0.72);
+  backdrop-filter: blur(3px);
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+@media (min-width: 640px) {
+  .mg-scrim {
+    align-items: center;
+  }
+}
+
+.mg-sheet {
+  width: 100%;
+  max-width: 430px;
+  background: linear-gradient(170deg, var(--mg-surface-raised), var(--mg-bg-deep));
+  border: 1px solid var(--mg-border-strong);
+  border-radius: 24px 24px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+  max-height: 85svh;
+  overflow-y: auto;
+  animation: mg-sheet-in calc(0.22s * var(--motion, 1)) ease;
+}
+@media (min-width: 640px) {
+  .mg-sheet {
+    border-radius: 24px;
+  }
+}
+@keyframes mg-sheet-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.mg-fade-in {
+  animation: mg-fade-in calc(0.25s * var(--motion, 1)) ease;
+}
+@keyframes mg-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.mg-scrollbar-hidden {
+  scrollbar-width: none;
+}
+.mg-scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
