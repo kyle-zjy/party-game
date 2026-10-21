@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { GameRoom } from '../../../shared/gameRoomTypes'
+import type { LadyRuleset } from '../../../shared/game/types'
 
 /**
  * 阶段 B 的房间状态机，供 GameRoomProvider 产出、GameRoomLobbyPage 消费。
@@ -29,7 +30,8 @@ export interface GameRoomContextValue {
   /** 离开房间，调用方负责之后的导航 */
   leaveRoom: () => Promise<void>
   /** 房主开始游戏：WAITING -> PLAYING，初始化共享 GameState */
-  startGame: () => Promise<void>
+  /** ladyRuleset 只在开发环境生效（候选小姐牌规则预览），生产环境恒为 official */
+  startGame: (ladyRuleset?: LadyRuleset) => Promise<void>
   /**
    * 游戏内动作（掷骰、买地产……）成功后，用返回的最新房间文档立刻更新本地
    * 状态，不等下一次 5 秒轮询——否则自己做的每个操作都要等最多 5 秒才能看到

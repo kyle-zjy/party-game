@@ -32,6 +32,7 @@ import {
 } from '../../../shared/gameRoomRules'
 import type { GameRoom, GameRoomPlayer } from '../../../shared/gameRoomTypes'
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../../shared/constants'
+import { normalizeRoom } from './normalizeRoom'
 
 const COLLECTION = 'game_rooms'
 const MAX_ROOM_CODE_ATTEMPTS = 5
@@ -78,7 +79,8 @@ async function getRoomById(roomId: string): Promise<GameRoom | null> {
   if (res.code) {
     throw new RoomError('INTERNAL_ERROR', `读取房间失败：${res.code} ${res.message ?? ''}`)
   }
-  return (res.data[0] as GameRoom | undefined) ?? null
+  const room = res.data[0] as GameRoom | undefined
+  return room ? normalizeRoom(room) : null
 }
 
 async function getRoomByCode(roomCode: string): Promise<GameRoom | null> {
@@ -92,13 +94,36 @@ async function getRoomByCode(roomCode: string): Promise<GameRoom | null> {
     throw new RoomError('INTERNAL_ERROR', `按房间码查询失败：${res.code} ${res.message ?? ''}`)
   }
   const doc = (res.data as GameRoom[])[0]
-  return doc ?? null
+  return doc ? normalizeRoom(doc) : null
 }
 
 /**
- * 乐观锁更新：只有 `_id` + `version` 都匹配时才会写入成功。
+ * 用 `db.command.set(value)` 包一层每个顶层字段再提交更新。
+ *
+ * 真实踩到的运行时 bug（完整分析见 `frontend/src/lib/gameEngineDb.ts` 的
+ * `wrapPatchFieldsAsSet` 注释，这里只记录结论，避免重复整段反编译证据）：
+ * CloudBase `collection.where(...).update(data)` 会把 `data` 里任何嵌套的
+ * 普通对象字段递归展开成 MongoDB 点路径更新，如果数据库里对应的父字段
+ * 当前是 `null`，点路径展开会失败并报
+ * `DATABASE_REQUEST_FAILED: Cannot create field '...' in element
+ * {xxx: null}`。`db.command.set()` 产出的 `Command` 实例会让 SDK 整字段
+ * 原子替换，不会被递归展开，不管这个字段当前是 `null` 还是不存在。
+ * 这个集合里虽然当前只有 `players`（数组）可能受影响，但统一在
+ * `updateRoomWithVersion` 这一个地方处理，比逐个排查"现在哪些字段不会有
+ * 嵌套 null"更可靠——以后这个集合的文档结构长出新的可能为 null 的嵌套
+ * 字段，不需要再回来重新审查这个函数。
+ *
  * 返回 true 表示写入成功，false 表示版本冲突（需要重新读取后重试）。
  */
+function wrapPatchFieldsAsSet(patch: Record<string, unknown>): Record<string, unknown> {
+  const command = db().command
+  const wrapped: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(patch)) {
+    wrapped[key] = command.set(value)
+  }
+  return wrapped
+}
+
 async function updateRoomWithVersion(
   roomId: string,
   expectedVersion: number,
@@ -109,7 +134,7 @@ async function updateRoomWithVersion(
     res = await db()
       .collection(COLLECTION)
       .where({ _id: roomId, version: expectedVersion })
-      .update({ ...patch, version: expectedVersion + 1, updatedAt: now() })
+      .update(wrapPatchFieldsAsSet({ ...patch, version: expectedVersion + 1, updatedAt: now() }))
   } catch (error) {
     throw wrapDbCallError(error, '更新房间')
   }

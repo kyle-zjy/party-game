@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { TAROT_CARDS, getTarotCard } from '../../../../shared/game/cards/tarotCards'
+import { activeTarotImpacts } from '../../../../shared/game/engine/tarotEffects'
 import type { GameHistoryEntry, GamePlayerState } from '../../../../shared/game/types'
 import type { GameRoomPlayer } from '../../../../shared/gameRoomTypes'
 import { QUICK_START_STEPS } from '../tutorial/tutorialLines'
@@ -57,13 +58,22 @@ function scoreOf(p: GamePlayerState): number {
   return p.coins + p.properties.length * 2
 }
 
-export function HistoryDrawer({ history, onClose }: { history: GameHistoryEntry[]; onClose: () => void }) {
+export function HistoryDrawer({
+  history,
+  nicknameOf,
+  onClose,
+}: {
+  history: GameHistoryEntry[]
+  nicknameOf: (uid: string) => string
+  onClose: () => void
+}) {
   const recent = [...history].reverse()
   return (
     <Sheet title="最近事件" onClose={onClose}>
       <ul className="mg-history-list">
         {recent.map((h) => (
           <li key={h.id} className="mg-history-row">
+            {h.actorUid && <strong>{nicknameOf(h.actorUid)}：</strong>}
             {h.message}
           </li>
         ))}
@@ -83,9 +93,14 @@ export function TarotDrawer({ currentTarotId, onClose }: { currentTarotId: strin
           {current.name} · {current.nameEn}
         </p>
         <p className="mg-muted">{current.description}</p>
-        <p className="mg-faint" style={{ marginTop: 8 }}>
-          展示用：本轮核心回合尚未接入这条塔罗对骰子/地产/事件的实际数值修正。
+        <p className="mg-faint" style={{ marginTop: 10 }}>
+          正在改变的结算：
         </p>
+        <ul className="mg-tarot-impact-list">
+          {activeTarotImpacts(currentTarotId).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
       </div>
       <p className="mg-muted" style={{ margin: '14px 0 6px' }}>
         全部 22 张（仅供查阅）

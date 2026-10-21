@@ -12,55 +12,43 @@ import { DrinkAckTray } from './ui/DrinkAckTray'
 import { LeaderboardDrawer, HistoryDrawer, TarotDrawer, HelpDrawer } from './ui/Drawers'
 import { QuickStartOverlay } from './ui/QuickStartOverlay'
 import { HeartAttackOverlay } from './ui/HeartAttackOverlay'
+import { ActiveTarotStrip, TarotDiscardTray, TarotRevealOverlay } from './ui/TarotPanels'
+import { BanCatchSheet } from './ui/BanCatchSheet'
+import { LadyWindowStrip } from './ui/LadyWindowStrip'
+import { JusticeResultPanel } from './ui/JusticeResultPanel'
+import { LadyStatusStrip } from './ui/LadyStatusStrip'
+import { CrazyCatchSheet, LadyRulesSheet } from './ui/LadyRulesSheet'
 import { getTarotCard } from '../../../shared/game/cards/tarotCards'
-import { hostLineForMyTurn, hostLineForWatching } from './tutorial/tutorialLines'
+import { BOARD_SIZE } from '../../../shared/game/board'
+import { contextualHostLine } from './tutorial/tutorialLines'
 import { hasCompletedQuickStart, markQuickStartCompleted } from './tutorial/tutorialSeen'
+import { hasSeenTarotReveal, markTarotRevealSeen } from './tutorial/tarotRevealSeen'
+import type { GameRoom } from '../../../shared/gameRoomTypes'
 import './theme.css'
 import './ui/gameBoardPage.css'
 
-type DrawerKind = 'leaderboard' | 'history' | 'tarot' | 'help' | 'menu' | null
+type DrawerKind = 'leaderboard' | 'history' | 'tarot' | 'help' | 'menu' | 'ban' | 'ladyRules' | 'crazy' | null
 
 export function GameBoardPage() {
   const { state } = useGameRoomContext()
-  const [drawer, setDrawer] = useState<DrawerKind>(null)
-  const [showQuickStart, setShowQuickStart] = useState(!hasCompletedQuickStart())
-
   if (state.phase !== 'ready' || state.room.status !== 'PLAYING' || !state.room.game) {
     return <p className="mg-muted">正在加载游戏…</p>
   }
-
-  return (
-    <GameBoardInner
-      room={state.room}
-      myUid={state.uid}
-      drawer={drawer}
-      setDrawer={setDrawer}
-      showQuickStart={showQuickStart}
-      setShowQuickStart={setShowQuickStart}
-    />
-  )
+  return <GameBoardInner room={state.room} myUid={state.uid} />
 }
 
-function GameBoardInner({
-  room,
-  myUid,
-  drawer,
-  setDrawer,
-  showQuickStart,
-  setShowQuickStart,
-}: {
-  room: Extract<ReturnType<typeof useGameRoomContext>['state'], { phase: 'ready' }>['room']
-  myUid: string
-  drawer: DrawerKind
-  setDrawer: (d: DrawerKind) => void
-  showQuickStart: boolean
-  setShowQuickStart: (v: boolean) => void
-}) {
+function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
   const game = room.game!
   const controller = useGameController(room._id, myUid)
   useAutoResolveLanding(game, myUid, controller)
 
-  const playersList = useMemo(() => Object.values(game.players), [game.players])
+  const [drawer, setDrawer] = useState<DrawerKind>(null)
+  const [showQuickStart, setShowQuickStart] = useState(!hasCompletedQuickStart())
+  // 已经关闭过的塔罗揭示事件；结合 localStorage 记录，刷新后不重复弹出同一次更换
+  const [dismissedRevealId, setDismissedRevealId] = useState<string | null>(null)
+  const [dismissedJusticeId, setDismissedJusticeId] = useState<string | null>(null)
+
+  const playersList = useMemo(() => game.turnOrder.map((uid) => game.players[uid]!).filter(Boolean), [game.turnOrder, game.players])
   const displayPositions = useTokenAnimation(playersList)
   const animatedPlayers = useMemo(
     () => playersList.map((p) => ({ ...p, position: displayPositions.get(p.uid) ?? p.position })),
@@ -69,13 +57,12 @@ function GameBoardInner({
 
   const me = game.players[myUid]
   const isMyTurn = game.turn.currentPlayerUid === myUid
-  const currentNickname = room.players.find((p) => p.uid === game.turn.currentPlayerUid)?.nickname ?? '一位玩家'
   const isHost = room.players.find((p) => p.uid === myUid)?.isHost ?? false
-  const nicknameOf = (uid: string) => room.players.find((p) => p.uid === uid)?.nickname ?? uid
+  const hostUid = room.players.find((p) => p.isHost)?.uid ?? null
+  const nicknameOf = useCallback((uid: string) => room.players.find((p) => p.uid === uid)?.nickname ?? '一位玩家', [room.players])
+  const currentNickname = nicknameOf(game.turn.currentPlayerUid)
 
-  // 骰子"摇动中"的状态只在用户点击骰子这个事件处理函数里设置/清除
-  // （而不是在 effect 里根据 game 状态变化反推），这样一次点击始终有一个
-  // 稳定的最短动画时长，不会因为网络往返特别快就"骰子还没转就停了"。
+  // 骰子"摇动中"只在点击事件里设置，保证一次点击始终有稳定的最短动画时长
   const [rolling, setRolling] = useState(false)
   const handleRollDice = useCallback(() => {
     setRolling(true)
@@ -84,24 +71,21 @@ function GameBoardInner({
     })
   }, [controller])
 
-  const hostLine = isMyTurn
-    ? hostLineForMyTurn(game.turn.phase, game.turn.extraRollPending)
-    : hostLineForWatching(currentNickname, game.turn.phase)
-
+  // 移动路线：落点结算前，棋子还在起点位置，按有效步数高亮将要走过的格子；
+  // 结算后位置已经是终点，不再高亮（否则会高亮到终点之后的格子）。
   const highlightPath = useMemo(() => {
-    if (!isMyTurn || !me) return []
-    if (game.turn.phase === 'ROLLING' || !game.turn.lastRoll) return []
-    const path: number[] = []
-    const steps = game.turn.lastRoll.effective
-    for (let s = 0; s <= steps; s += 1) {
-      path.push((me.position + s) % 74 >= 0 ? (me.position + s) % 74 : me.position)
-    }
-    return path
-  }, [isMyTurn, me, game.turn.phase, game.turn.lastRoll])
+    const current = game.players[game.turn.currentPlayerUid]
+    const roll = game.turn.lastRoll
+    if (!current || !roll || game.turn.phase !== 'LANDING' || game.turn.landingResolved) return []
+    return Array.from({ length: roll.effective + 1 }, (_, s) => (current.position + s) % BOARD_SIZE)
+  }, [game])
 
-  if (!me) {
-    return <p className="mg-muted">找不到你的游戏状态，请刷新页面重试。</p>
-  }
+  const revealEvent =
+    game.lastTarotChange && game.lastTarotChange.id !== dismissedRevealId && !hasSeenTarotReveal(game.lastTarotChange.id) && !showQuickStart
+      ? game.lastTarotChange
+      : null
+
+  if (!me) return <p className="mg-muted">找不到你的游戏状态，请刷新页面重试。</p>
 
   const worldTarot = getTarotCard(game.currentTarotId)
 
@@ -117,26 +101,31 @@ function GameBoardInner({
         onOpenMenu={() => setDrawer('menu')}
       />
 
-      {/*
-        可滚动区域：棋盘和"最近事件/排行榜/帮助"这类次级内容放在这里，
-        和底部"操作区"（骰子/继续/翻牌/出牌按钮）分离，保证操作区始终
-        固定可见，不会被长棋盘或多条喝酒提醒挤出屏幕——这是用户反馈
-        "操作按钮被遮挡"问题的直接对应修复。
-      */}
       <div className="mg-scroll-area mg-scrollbar-hidden">
-        <HostLineBanner line={hostLine} />
-
-        <GameBoard
-          players={animatedPlayers}
-          currentUid={myUid}
-          highlightPath={isMyTurn ? highlightPath : []}
-          worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`}
+        <HostLineBanner line={contextualHostLine(game, myUid, isHost, nicknameOf)} />
+        <ActiveTarotStrip game={game} nicknameOf={nicknameOf} onOpen={() => setDrawer('tarot')} />
+        <LadyWindowStrip game={game} />
+        <LadyStatusStrip
+          game={game}
+          myUid={myUid}
+          isHost={isHost}
+          nicknameOf={nicknameOf}
+          controller={controller}
+          onOpenRules={() => setDrawer('ladyRules')}
+          onCrazyCatch={() => setDrawer('crazy')}
         />
 
+        <GameBoard players={animatedPlayers} currentUid={myUid} highlightPath={highlightPath} worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`} />
+
+        <TarotDiscardTray game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />
         <DrinkAckTray
+          game={game}
           acks={game.pendingDrinkAcks}
           myUid={myUid}
           isHost={isHost}
+          tarotId={game.currentTarotId}
+          me={me}
+          players={playersList}
           nicknameOf={nicknameOf}
           controller={controller}
         />
@@ -151,6 +140,11 @@ function GameBoardInner({
           <button type="button" className="mg-pill" onClick={() => setDrawer('help')}>
             帮助
           </button>
+          {isHost && (
+            <button type="button" className="mg-pill" onClick={() => setDrawer('ban')}>
+              禁令：有人说了"为什么"
+            </button>
+          )}
         </div>
       </div>
 
@@ -166,33 +160,59 @@ function GameBoardInner({
       <div className="mg-bottom-dock">
         <MyResourcesBar me={me} onOpenProperties={() => setDrawer('leaderboard')} onOpenHand={() => setDrawer('help')} />
         <ActionPanel
+          game={game}
+          myUid={myUid}
+          hostUid={hostUid}
           isMyTurn={isMyTurn}
           isHost={isHost}
-          phase={game.turn.phase}
-          pendingDecision={game.turn.pendingDecision}
-          lastRollNatural={game.turn.lastRoll?.natural ?? null}
           rolling={rolling}
           onRollDice={handleRollDice}
-          revealedLadyCardId={game.turn.revealedLadyCardId}
           me={me}
           roomPlayers={room.players}
+          nicknameOf={nicknameOf}
           controller={controller}
         />
       </div>
 
-      {drawer === 'leaderboard' && (
-        <LeaderboardDrawer players={playersList} roomPlayers={room.players} myUid={myUid} onClose={() => setDrawer(null)} />
-      )}
-      {drawer === 'history' && <HistoryDrawer history={game.history} onClose={() => setDrawer(null)} />}
+      {drawer === 'leaderboard' && <LeaderboardDrawer players={playersList} roomPlayers={room.players} myUid={myUid} onClose={() => setDrawer(null)} />}
+      {drawer === 'history' && <HistoryDrawer history={game.history} nicknameOf={nicknameOf} onClose={() => setDrawer(null)} />}
       {drawer === 'tarot' && <TarotDrawer currentTarotId={game.currentTarotId} onClose={() => setDrawer(null)} />}
       {(drawer === 'help' || drawer === 'menu') && <HelpDrawer onClose={() => setDrawer(null)} />}
+      {drawer === 'ladyRules' && <LadyRulesSheet game={game} isHost={isHost} controller={controller} onClose={() => setDrawer(null)} />}
+      {drawer === 'crazy' && isHost && <CrazyCatchSheet game={game} players={room.players} controller={controller} onClose={() => setDrawer(null)} />}
+      {drawer === 'ban' && isHost && <BanCatchSheet players={room.players} tarotId={game.currentTarotId} controller={controller} onClose={() => setDrawer(null)} />}
 
       {game.pendingHeartAttack && (
         <HeartAttackOverlay
           event={game.pendingHeartAttack}
           isHost={isHost}
+          tarotId={game.currentTarotId}
+          players={room.players}
           nicknameOf={nicknameOf}
-          onDismiss={() => void controller.dismissHeartAttack()}
+          busy={controller.busy}
+          onResolve={(first, falseStarts) => void controller.resolveHeartAttack(first, falseStarts)}
+        />
+      )}
+
+      {revealEvent && (
+        <TarotRevealOverlay
+          event={revealEvent}
+          nicknameOf={nicknameOf}
+          onClose={() => {
+            markTarotRevealSeen(revealEvent.id)
+            setDismissedRevealId(revealEvent.id)
+          }}
+        />
+      )}
+
+      {!revealEvent && game.lastJusticeSwap && game.lastJusticeSwap.id !== dismissedJusticeId && !hasSeenTarotReveal(game.lastJusticeSwap.id) && (
+        <JusticeResultPanel
+          game={game}
+          nicknameOf={nicknameOf}
+          onClose={() => {
+            markTarotRevealSeen(game.lastJusticeSwap!.id)
+            setDismissedJusticeId(game.lastJusticeSwap!.id)
+          }}
         />
       )}
 

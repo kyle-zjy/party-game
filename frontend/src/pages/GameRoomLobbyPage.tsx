@@ -5,6 +5,7 @@ import { loadNickname, saveNickname } from '../lib/session'
 import { describeUnknownError } from '../../../shared/errors'
 import { MIN_PLAYERS } from '../../../shared/constants'
 import { GameBoardPage } from '../game/GameBoardPage'
+import type { LadyRuleset } from '../../../shared/game/types'
 
 /**
  * 阶段 B 的房间大厅页，对应旧模型的 RoomPage.tsx。
@@ -48,11 +49,11 @@ export function GameRoomLobbyPage() {
   const isHost = room.players.find((p) => p.uid === uid)?.isHost ?? false
   const canStart = room.players.length >= MIN_PLAYERS
 
-  async function handleStart() {
+  async function handleStart(ladyRuleset: LadyRuleset = 'official') {
     setStartError(null)
     setStarting(true)
     try {
-      await startGame()
+      await startGame(ladyRuleset)
     } catch (err) {
       if (import.meta.env.DEV) console.error('[GameRoomLobbyPage] 开始游戏失败，原始错误：', err)
       setStartError(describeUnknownError(err))
@@ -113,6 +114,11 @@ export function GameRoomLobbyPage() {
           </button>
         ) : (
           <p className="text-muted">等待房主开始游戏</p>
+        )}
+        {isHost && import.meta.env.DEV && (
+          <button className="btn btn-secondary" disabled={!canStart || starting} onClick={() => void handleStart('candidate-preview')}>
+            开发测试：开始游戏（启用候选小姐牌规则）
+          </button>
         )}
         {startError && <p className="text-error">{startError}</p>}
         <button

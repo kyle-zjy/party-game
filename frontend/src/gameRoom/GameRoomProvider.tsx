@@ -8,6 +8,7 @@ import type { PollingHandle } from '../lib/polling'
 import { describeUnknownError, RoomError } from '../../../shared/errors'
 import { GameRoomContext, type GameRoomPageState } from './GameRoomContext'
 import type { GameRoom } from '../../../shared/gameRoomTypes'
+import type { LadyRuleset } from '../../../shared/game/types'
 
 /**
  * 阶段 B 大厅页面的单一状态来源，对应旧模型的 RoomProvider.tsx。
@@ -102,9 +103,9 @@ export function GameRoomProvider() {
     stopPolling()
   }, [stopPolling])
 
-  const startGame = useCallback(async () => {
+  const startGame = useCallback(async (ladyRuleset: LadyRuleset = 'official') => {
     if (!roomIdRef.current || !uidRef.current) return
-    const room = await startGameWithEngine(roomIdRef.current, uidRef.current)
+    const room = await startGameWithEngine(roomIdRef.current, uidRef.current, ladyRuleset)
     setState({ phase: 'ready', room, uid: uidRef.current, connection: 'connected' })
     // 不需要在这里重启轮询：房间 id 没变，startPollingFor 已经在 resolve() 时启动过，
     // 下一轮轮询自然会读到 status=PLAYING 和 game 字段。

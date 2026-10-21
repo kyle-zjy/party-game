@@ -11,11 +11,14 @@ export function appendHistory(
   history: GameHistoryEntry[],
   message: string,
   now: number,
+  actorUid?: string,
 ): GameHistoryEntry[] {
   const entry: GameHistoryEntry = {
     id: `h-${now}-${Math.random().toString(36).slice(2, 8)}`,
     at: now,
     message,
+    // 不写 undefined 字段：CloudBase 文档里不保留 undefined，统一省略。
+    ...(actorUid ? { actorUid } : {}),
   }
   const next = [...history, entry]
   return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next

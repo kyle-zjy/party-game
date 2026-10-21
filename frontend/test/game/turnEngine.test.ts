@@ -3,13 +3,19 @@ import { initGameState } from '../../../shared/game/engine/initGame'
 import {
   applyAdvanceAfterLanding,
   applyBuyPropertyDecision,
+  applyChooseDrinkTargetDecision,
   applyEndTurn,
+  applyHostRulingAck,
+  applyTruthOrDareChoice,
+  applyTruthOrDareResult,
   applyResolveLanding,
   applyRevealLadyCard,
   applyRollDice,
   applySkipTactic,
   GameActionError,
 } from '../../../shared/game/engine/turnEngine'
+import { applyChooseLovers, applyJusticeSwap } from '../../../shared/game/engine/tarotActions'
+import { applyKingTaskResolve, applyKingWriteTask } from '../../../shared/game/engine/ladyEvents'
 import type { GameRoomPlayer } from '../../../shared/gameRoomTypes'
 import type { GameState } from '../../../shared/game/types'
 import { getCell, isPropertyCell } from '../../../shared/game/board'
@@ -24,7 +30,9 @@ function makeThreePlayerGame(): GameState {
     makeRoomPlayer({ uid: 'u2', nickname: 'Bob', seat: 1 }),
     makeRoomPlayer({ uid: 'u3', nickname: 'Carol', seat: 2 }),
   ]
-  return initGameState(players, 1000)
+  // 固定一张不影响掷骰/移动/待决事项的开局塔罗（星星只影响心脏病奖励），
+  // 避免随机抽到恋人/正义导致第一回合需要先处理塔罗事件。
+  return initGameState(players, 1000, 'tarot-17')
 }
 
 describe('full turn loop: roll -> land -> lady card -> tactic -> end turn', () => {
@@ -54,8 +62,9 @@ describe('full turn loop: roll -> land -> lady card -> tactic -> end turn', () =
         state = applyAdvanceAfterLanding(state, expectedUid, 2000)
       }
       expect(state.turn.phase).toBe('LADY_CARD')
-      const reveal = applyRevealLadyCard(state, expectedUid, 'lady-3', 2000)
-      state = reveal.state
+      const reveal = applyRevealLadyCard(state, expectedUid, 2000)
+      state = resolvePendingDecisionIfAny(reveal.state, expectedUid, order[0]!)
+      state = finishKingEventIfAny(state, order[0]!)
       state = applySkipTactic(state, expectedUid, 2000)
       state = applyEndTurn(state, expectedUid, 2000)
     }
@@ -64,23 +73,38 @@ describe('full turn loop: roll -> land -> lady card -> tactic -> end turn', () =
   })
 })
 
+/** K 国王传承是正式规则：翻到 K 时完成（或跳过）任务并留下新任务，回合才进入战术阶段 */
+function finishKingEventIfAny(state: GameState, hostUid: string): GameState {
+  const ev = state.ladyEvent
+  if (!ev || ev.status !== 'ACTIVE') return state
+  if (ev.step === 'KING_PERFORM') state = applyKingTaskResolve(state, hostUid, hostUid, ev.eventId, true, 2000)
+  return applyKingWriteTask(state, ev.actingUid, hostUid, ev.eventId, '模仿一种动物叫三声', 2000)
+}
+
 function resolvePendingDecisionIfAny(state: GameState, currentUid: string, hostUid: string): GameState {
   const decision = state.turn.pendingDecision
   if (!decision) return state
-  if (decision.kind === 'BUY_PROPERTY') {
-    return applyBuyPropertyDecision(state, currentUid, false, 2000)
+  switch (decision.kind) {
+    case 'BUY_PROPERTY':
+      return applyBuyPropertyDecision(state, currentUid, false, 2000)
+    case 'HOST_RULING':
+      return applyHostRulingAck(state, hostUid, hostUid, 2000)
+    case 'CHOOSE_DRINK_TARGET':
+      return applyChooseDrinkTargetDecision(state, currentUid, state.turnOrder.find((u) => u !== currentUid)!, 2000)
+    case 'TRUTH_OR_DARE': {
+      const chosen = decision.choice === null ? applyTruthOrDareChoice(state, currentUid, 'TRUTH', 2000) : state
+      const ready = chosen.turn.pendingDecision?.kind === 'TRUTH_OR_DARE' && chosen.turn.pendingDecision.choice === null
+        ? applyTruthOrDareChoice(chosen, currentUid, 'DARE', 2000)
+        : chosen
+      return applyTruthOrDareResult(ready, currentUid, true, 2000)
+    }
+    case 'CHOOSE_LOVERS':
+      return applyChooseLovers(state, currentUid, state.turnOrder[0]!, state.turnOrder[1]!, 2000)
+    case 'TAROT_JUSTICE':
+      return applyJusticeSwap(state, hostUid, hostUid, null, null, 2000)
+    default:
+      return state
   }
-  if (decision.kind === 'DRINK_ACK') {
-    return { ...state, turn: { ...state.turn, pendingDecision: null } }
-  }
-  if (decision.kind === 'HOST_RULING') {
-    return { ...state, turn: { ...state.turn, pendingDecision: null } }
-  }
-  if (decision.kind === 'CHOOSE_DRINK_TARGET' || decision.kind === 'TRUTH_OR_DARE' || decision.kind === 'NATURAL_SIX_CHAIN') {
-    return { ...state, turn: { ...state.turn, pendingDecision: null } }
-  }
-  void hostUid
-  return state
 }
 
 describe('rollDice', () => {
@@ -132,12 +156,12 @@ describe('natural six extra roll', () => {
     expect(state.turn.phase).toBe('LADY_CARD')
     expect(state.turn.extraRollUsed).toBe(true)
 
-    const reveal = applyRevealLadyCard(state, 'u1', 'lady-4', 2000)
+    const reveal = applyRevealLadyCard(state, 'u1', 2000)
     state = reveal.state
-    expect(state.turn.revealedLadyCardId).toBe('lady-4')
+    expect(state.turn.revealedLadyCardId).toMatch(/^[SHDC]-(A|[2-9]|10|J|Q|K)$/)
 
     // cannot reveal a second lady card in the same turn
-    expect(() => applyRevealLadyCard(state, 'u1', 'lady-5', 2000)).toThrow(GameActionError)
+    expect(() => applyRevealLadyCard(state, 'u1', 2000)).toThrow(GameActionError)
   })
 })
 
@@ -156,8 +180,8 @@ describe('other players cannot act on the current player turn via normal actions
       state = resolvePendingDecisionIfAny(l2.state, 'u1', 'u1')
       state = applyAdvanceAfterLanding(state, 'u1', 2000)
     }
-    expect(() => applyRevealLadyCard(state, 'u3', 'lady-2', 2000)).toThrow(GameActionError)
-    const reveal = applyRevealLadyCard(state, 'u1', 'lady-2', 2000)
+    expect(() => applyRevealLadyCard(state, 'u3', 2000)).toThrow(GameActionError)
+    const reveal = applyRevealLadyCard(state, 'u1', 2000)
     state = reveal.state
     expect(() => applyEndTurn(state, 'u2', 2000)).toThrow(GameActionError)
   })
@@ -249,8 +273,8 @@ describe('idempotency: repeated submission of the same action should not double-
       state = resolvePendingDecisionIfAny(l2.state, 'u1', 'u1')
       state = applyAdvanceAfterLanding(state, 'u1', 2000)
     }
-    const reveal = applyRevealLadyCard(state, 'u1', 'lady-2', 2000)
-    state = reveal.state
+    const reveal = applyRevealLadyCard(state, 'u1', 2000)
+    state = finishKingEventIfAny(resolvePendingDecisionIfAny(reveal.state, 'u1', 'u1'), 'u1')
     state = applySkipTactic(state, 'u1', 2000)
     state = applyEndTurn(state, 'u1', 2000)
     expect(state.turn.currentPlayerUid).toBe('u2')

@@ -1,14 +1,7 @@
 /**
- * 22 张世界塔罗（V1.5 规则书第三部分）。文案逐字保留原稿效果描述。
- *
- * 【本轮的接入范围，刻意保守】这 22 条大多是"持续"效果，需要在骰子修正、
- * 碰撞结算、真心话大冒险、经过起点金币数、移动格数等多处规则里分别接入才算
- * "真正生效"。Phase C 第一轮的核心回合只实现了外圈基础移动/地产/事件结算，
- * 不实现这 22 条持续效果的实际数值修正——这里只做到：
- * 1. 数据完整录入、可展示（格子里的"更换塔罗"事件可以抽一张新塔罗生效展示）。
- * 2. `currentTarotId` 写入共享游戏状态，所有玩家看到同一张世界塔罗。
- * 3. 不在骰子/地产/碰撞逻辑里读取这张塔罗来改变结算数值。
- * 这是诚实的"展示但未结算"状态，不是缺陷——详见本次开发报告第二项。
+ * 22 张世界塔罗（V1.5 规则书第三部分），文案逐字保留原稿。
+ * 持续效果的结算在 engine/tarotEffects.ts，即时效果在 engine/tarotActions.ts。
+ * 每张牌的实现状态见 docs/rule-implementation-matrix.md。
  */
 import type { TarotCardDef } from './types'
 
@@ -19,7 +12,7 @@ export const TAROT_CARDS: TarotCardDef[] = [
   { id: 'tarot-3', romanNumeral: 'III', name: '皇后', nameEn: 'The Empress', effectTiming: 'continuous', description: '完成任何真心话或大冒险后，从银行得 1 金币。' },
   { id: 'tarot-4', romanNumeral: 'IV', name: '皇帝', nameEn: 'The Emperor', effectTiming: 'continuous', description: '集齐同色 3 处地产时，该色租金为 3 金币而不是 2 金币。' },
   { id: 'tarot-5', romanNumeral: 'V', name: '教皇', nameEn: 'The Hierophant', effectTiming: 'continuous', description: '抓到其他玩家违规时，抓到者获得 2 金币。' },
-  { id: 'tarot-6', romanNumeral: 'VI', name: '恋人', nameEn: 'The Lovers', effectTiming: 'instant', description: '翻牌者指定两名玩家"绑定"。在此塔罗有效期间，两人中每人从银行获得金币时，另一人也得 1 金币。' },
+  { id: 'tarot-6', romanNumeral: 'VI', name: '恋人', nameEn: 'The Lovers', effectTiming: 'instant+continuous', description: '翻牌者指定两名玩家"绑定"。在此塔罗有效期间，两人中每人从银行获得金币时，另一人也得 1 金币。' },
   { id: 'tarot-7', romanNumeral: 'VII', name: '战车', nameEn: 'The Chariot', effectTiming: 'continuous', description: '所有移动骰结果 +1，最大仍为 6；只有"自然掷出 6"才触发额外掷骰。' },
   { id: 'tarot-8', romanNumeral: 'VIII', name: '力量', nameEn: 'Strength', effectTiming: 'continuous', description: '碰撞回原点变为退 3 格，原退 3 格变为退 1 格（不叠加）。' },
   { id: 'tarot-9', romanNumeral: 'IX', name: '隐者', nameEn: 'The Hermit', effectTiming: 'continuous', description: '若你回合开始时独自占据一个格子，从银行得 1 金币。' },
@@ -43,9 +36,10 @@ export function getTarotCard(id: string): TarotCardDef {
   return card
 }
 
-export function drawRandomTarotId(excludeId?: string): string {
+/** 抽一张塔罗；更换时排除当前这张，保证真的换了一张 */
+export function drawRandomTarotId(excludeId?: string, rng: () => number = Math.random): string {
   const pool = excludeId ? TAROT_CARDS.filter((c) => c.id !== excludeId) : TAROT_CARDS
-  const idx = Math.floor(Math.random() * pool.length)
+  const idx = Math.floor(rng() * pool.length)
   const card = pool[idx]
   if (!card) throw new Error('塔罗牌堆为空，不应该发生')
   return card.id

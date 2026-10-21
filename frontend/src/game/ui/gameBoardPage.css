@@ -507,3 +507,436 @@
   color: var(--mg-text);
   font-size: 14px;
 }
+
+/* ---------- 世界塔罗 ---------- */
+.mg-active-tarot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid rgba(139, 92, 246, 0.45);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.16), rgba(16, 20, 39, 0.6));
+  color: var(--mg-text);
+  cursor: pointer;
+}
+.mg-active-tarot-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mg-active-tarot-name {
+  margin: 0;
+  font-weight: 700;
+  font-size: 14px;
+}
+.mg-active-tarot-text p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.mg-tarot-face {
+  flex-shrink: 0;
+  width: 44px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1.5px solid var(--mg-gold);
+  background: linear-gradient(170deg, #2a1f4f, #120e24);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+  color: var(--mg-gold);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.mg-tarot-face-numeral {
+  font-family: var(--mg-font-number);
+  font-size: 11px;
+}
+.mg-tarot-face-star {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+.mg-tarot-face-name {
+  font-family: var(--mg-font-display);
+  font-size: 11px;
+  color: var(--mg-text);
+}
+.mg-tarot-face-large {
+  width: 132px;
+  height: 196px;
+  margin: 8px auto 0;
+  border-width: 2px;
+  border-radius: 14px;
+  padding: 12px 6px;
+  box-shadow: 0 0 28px var(--mg-gold-glow), 0 10px 24px rgba(0, 0, 0, 0.5);
+}
+.mg-tarot-face-large .mg-tarot-face-numeral {
+  font-size: 20px;
+}
+.mg-tarot-face-large .mg-tarot-face-star {
+  width: 44px;
+  height: 44px;
+}
+.mg-tarot-face-large .mg-tarot-face-name {
+  font-size: 22px;
+}
+.mg-tarot-face-en {
+  font-size: 10px;
+  color: var(--mg-text-muted);
+}
+
+.mg-tarot-reveal-sheet {
+  text-align: center;
+}
+.mg-tarot-reveal-sheet h3 {
+  margin: 4px 0 8px;
+  color: var(--mg-gold);
+}
+.mg-tarot-reveal-body {
+  min-height: 120px;
+}
+.mg-tarot-impact-list {
+  text-align: left;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 塔罗正在影响这一步结算的行内提示：紫色底，和普通说明文字区分开 */
+.mg-tarot-inline {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #d9ccff;
+  background: rgba(139, 92, 246, 0.14);
+  border-left: 3px solid var(--mg-purple);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.mg-tarot-inline-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mg-drink-tray-title {
+  margin: 0;
+  font-size: 12px;
+}
+.mg-peach-btn {
+  font-size: 13px;
+  padding: 10px 12px;
+}
+.mg-tactic-card-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------- 小姐主牌 / 德国心脏病窗口 ---------- */
+.mg-lady-window-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid rgba(255, 96, 124, 0.35);
+  background: linear-gradient(135deg, rgba(255, 96, 124, 0.1), rgba(16, 20, 39, 0.6));
+}
+.mg-lady-window-strip p {
+  margin: 0;
+  font-size: 12px;
+}
+.mg-lady-window-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.mg-lady-window-head .mg-faint {
+  font-size: 12px;
+}
+.mg-lady-window {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 8px 0;
+}
+.mg-lady-face {
+  width: 72px;
+  height: 104px;
+  border-radius: 10px;
+  background: #f7f2e8;
+  color: #1c1830;
+  border: 2px solid var(--mg-gold);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  margin: 0 auto;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.mg-lady-face-red {
+  color: #c8213e;
+}
+.mg-lady-face-small {
+  width: 44px;
+  height: 62px;
+  border-width: 1.5px;
+  border-radius: 7px;
+  padding: 3px 2px;
+  margin: 0;
+}
+.mg-lady-face-corner {
+  font-family: var(--mg-font-number);
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+}
+.mg-lady-face-small .mg-lady-face-corner {
+  font-size: 13px;
+}
+.mg-lady-face-name {
+  font-family: var(--mg-font-display);
+  font-size: 13px;
+  color: #1c1830;
+}
+.mg-lady-face-count {
+  font-size: 11px;
+  color: #6b6375;
+}
+.mg-suit-totals {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.mg-suit-total {
+  min-width: 46px;
+  text-align: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mg-text);
+  border: 1px solid var(--mg-border);
+}
+.mg-suit-red {
+  color: #ff8fa3;
+}
+.mg-suit-total-hit {
+  background: var(--mg-coral);
+  color: #fff;
+  border-color: var(--mg-coral);
+  box-shadow: 0 0 14px var(--mg-coral-glow);
+}
+
+/* ---------- 正义交换结果 ---------- */
+.mg-justice-row {
+  margin-top: 12px;
+}
+.mg-justice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 6px;
+}
+.mg-justice-table th {
+  text-align: left;
+  color: var(--mg-text-muted);
+  font-weight: 500;
+  padding: 4px 8px 4px 0;
+  white-space: nowrap;
+  vertical-align: top;
+}
+.mg-justice-table td {
+  padding: 4px 0;
+  color: var(--mg-text);
+}
+
+/* ---------- 小姐牌事件（Phase D.2） ---------- */
+.mg-rule-badge {
+  display: inline-block;
+  margin: 2px 0 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--mg-text-muted);
+  border: 1px dashed var(--mg-border-strong);
+}
+.mg-rule-badge-confirmed {
+  color: var(--mg-bg-deep);
+  background: var(--mg-gold);
+  border-style: solid;
+  border-color: var(--mg-gold);
+}
+.mg-lady-step {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mg-text);
+}
+.mg-lady-you-act {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mg-gold);
+}
+.mg-lady-warning {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mg-coral);
+}
+.mg-lady-cancel {
+  font-size: 12.5px;
+  padding: 8px 10px;
+}
+.mg-lady-countdown {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: var(--mg-font-number);
+  font-size: 20px;
+  color: var(--mg-teal);
+}
+.mg-lady-countdown .mg-faint {
+  font-family: var(--mg-font-body);
+  font-size: 11.5px;
+}
+.mg-text-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-sm);
+  border: 1px solid var(--mg-border-strong);
+  background: var(--mg-bg-deep);
+  color: var(--mg-text);
+  font: inherit;
+  font-size: 16px; /* 小于 16px 时 iOS 会自动放大页面 */
+  resize: vertical;
+}
+.mg-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mg-pill-active {
+  border-color: var(--mg-gold);
+  color: var(--mg-gold);
+}
+.mg-duel-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.mg-duel-roll {
+  font-size: 34px;
+  color: var(--mg-gold);
+}
+.mg-duel-history {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+.mg-king-task {
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-sm);
+  border: 1px solid var(--mg-gold);
+  background: rgba(242, 196, 108, 0.08);
+}
+.mg-king-task p {
+  margin: 0;
+}
+.mg-king-task-text {
+  font-family: var(--mg-font-display);
+  font-size: 18px;
+  color: var(--mg-gold);
+  word-break: break-word;
+}
+.mg-lady-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid var(--mg-border);
+  background: rgba(23, 28, 53, 0.7);
+}
+.mg-lady-status p {
+  margin: 0;
+  font-size: 12px;
+}
+.mg-lady-status-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.mg-status-chip {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.mg-status-chip-coral { color: var(--mg-coral); }
+.mg-status-chip-purple { color: #c4b0ff; }
+.mg-status-chip-gold { color: var(--mg-gold); }
+.mg-status-chip-teal { color: var(--mg-teal); }
+.mg-status-chip-muted { color: var(--mg-text-muted); }
+.mg-lady-rules-list {
+  list-style: none;
+  margin: 10px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mg-lady-rules-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--mg-border);
+}
+.mg-lady-rules-row p {
+  margin: 0;
+  font-size: 13px;
+}
+.mg-lady-rules-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mg-lady-rules-head .mg-rule-badge {
+  margin: 0;
+}
+.mg-lady-rules-rank {
+  min-width: 26px;
+  font-size: 18px;
+  color: var(--mg-gold);
+}
+.mg-lady-guide {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}

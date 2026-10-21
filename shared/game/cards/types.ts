@@ -22,6 +22,13 @@ export interface LadyCardDef {
   ruleStatus: CardRuleStatus
   /** 德国心脏病计数：A/6/J=1；2/7/Q=2；3/8/K=3；4/9=4；5/10=5（10 没有心脏病映射，规则书未提供花色，这里按点数本身降级处理，见文件尾注释） */
   heartAttackCount: number
+  /** 未确认牌的候选方案（Phase D.2）：只在"候选规则预览"房间里结算，正式对局只用于查阅 */
+  candidate?: {
+    name: string
+    rule: string
+    /** 分步中文指引 */
+    guide: string[]
+  }
 }
 
 export interface TacticCardDef {
@@ -29,7 +36,9 @@ export interface TacticCardDef {
   name: string
   description: string
   ruleStatus: CardRuleStatus
+  playMode: 'active' | 'response' | 'pending'
   requiresTarget: boolean
+  copies: number
 }
 
 export interface TarotCardDef {
@@ -38,8 +47,8 @@ export interface TarotCardDef {
   name: string
   nameEn: string
   description: string
-  /** 'instant' 翻出时立即结算一次；'continuous' 在替换前持续生效（本轮不接入实际的持续效果判定，仅展示） */
-  effectTiming: 'instant' | 'continuous'
+  /** instant 翻开时结算一次；continuous 在被替换前持续生效；恋人两者兼有 */
+  effectTiming: 'instant' | 'continuous' | 'instant+continuous'
 }
 
 export const CARD_ERROR_CODE: ErrorCode = 'INVALID_GAME_ACTION'

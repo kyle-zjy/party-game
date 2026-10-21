@@ -7,6 +7,7 @@
  * 按 V1.5 规则书"1. 开局"与"4.1 房间与开局"：
  * - 每人 5 金币、1 张三国杀手牌、2 张德州底牌、1 张身份牌。
  * - 棋盘摆开 1 张世界塔罗（随机抽一张作为开局塔罗）。
+ * - 洗好 52 张小姐主牌（四花色 × A–K，Q10 补充方案）。
  * - 玩家顺序固定为开局时的座位顺序（GameRoomPlayer.seat 升序）。
  * - 玩家初始棋子位置：对应自己棋子颜色的起点格（棋盘四角）。
  */
@@ -15,9 +16,12 @@ import { drawRandomTacticCardId } from '../cards/tacticCards'
 import { drawRandomTarotId } from '../cards/tarotCards'
 import { dealHoleCards } from '../cards/texasCards'
 import { PLACEHOLDER_IDENTITY_CARD } from '../cards/identityCards'
-import type { GamePlayerState, GameState, PlayerColor } from '../types'
+import type { GamePlayerState, GameState, LadyRuleset, PlayerColor } from '../types'
+import { EMPTY_LADY_STATUS } from './ladyEvents'
 import type { GameRoomPlayer } from '../../gameRoomTypes'
 import { appendHistory } from './history'
+import { revealTarot } from './tarotActions'
+import { buildLadyDeck, shuffle } from '../cards/ladyDeck'
 
 const SEAT_COLORS: PlayerColor[] = ['B', 'G', 'Y', 'R']
 
@@ -30,7 +34,18 @@ export function colorForSeat(seat: number): PlayerColor {
 
 export const INITIAL_COINS = 5
 
-export function initGameState(roomPlayers: GameRoomPlayer[], now: number): GameState {
+/**
+ * openingTarotId 只给测试固定开局塔罗用；正常开局随机抽一张。
+ * 开局摆放的塔罗同样结算即时效果（规则书"棋盘摆开 1 张世界塔罗"），
+ * 恋人/正义需要的选择由先手玩家/房主在第一回合开始前完成。
+ */
+export function initGameState(
+  roomPlayers: GameRoomPlayer[],
+  now: number,
+  openingTarotId?: string,
+  rng: () => number = Math.random,
+  ladyRuleset: LadyRuleset = 'official',
+): GameState {
   const ordered = [...roomPlayers].sort((a, b) => a.seat - b.seat)
   if (ordered.length === 0) {
     throw new Error('无法在没有玩家的房间初始化游戏')
@@ -51,7 +66,7 @@ export function initGameState(roomPlayers: GameRoomPlayer[], now: number): GameS
       position: startCellIdForColor(color),
       coins: INITIAL_COINS,
       properties: [],
-      tacticHand: [drawRandomTacticCardId()],
+      tacticHand: [drawRandomTacticCardId(rng)],
       identityCardId: PLACEHOLDER_IDENTITY_CARD.id,
       texasHoleCards: [hole0, hole1],
     }
@@ -67,7 +82,7 @@ export function initGameState(roomPlayers: GameRoomPlayer[], now: number): GameS
     now,
   )
 
-  return {
+  const base: GameState = {
     startedAt: now,
     turnOrder,
     currentPlayerIndex: 0,
@@ -82,12 +97,33 @@ export function initGameState(roomPlayers: GameRoomPlayer[], now: number): GameS
       pendingDecision: null,
       revealedLadyCardId: null,
       landingResolved: false,
+      playersWhoPlayedTacticThisTurn: [],
+      tarotNotes: [],
+      activeTacticUsed: false,
     },
     pendingDrinkAcks: [],
     recentLadyCards: [],
+    ladyDeck: shuffle(buildLadyDeck(), rng),
+    ladyDiscard: [],
     pendingHeartAttack: null,
-    currentTarotId: drawRandomTarotId(),
+    lastJusticeSwap: null,
+    currentTarotId: '',
+    tarotState: { loversPair: null },
+    lastTarotChange: null,
+    pendingTarotDiscards: [],
+    ladyRuleset,
+    ladyEvent: null,
+    ladyStatus: EMPTY_LADY_STATUS,
+    kingTask: null,
+    kingTaskHistory: [],
     history,
     finished: false,
+  }
+
+  const reveal = revealTarot(base, openingTarotId ?? drawRandomTarotId(undefined, rng), firstPlayer, now, rng)
+  return {
+    ...reveal.state,
+    lastTarotChange: reveal.state.lastTarotChange && { ...reveal.state.lastTarotChange, previousTarotId: null, triggeredByUid: null },
+    turn: { ...reveal.state.turn, pendingDecision: reveal.followUp },
   }
 }

@@ -21,7 +21,8 @@ describe('initGameState', () => {
       makeRoomPlayer({ uid: 'u2', nickname: 'Bob', seat: 1 }),
       makeRoomPlayer({ uid: 'u3', nickname: 'Carol', seat: 2 }),
     ]
-    const state = initGameState(players, 1000)
+    // 固定一张没有即时效果的开局塔罗（星星），审判/死神/命运之轮会合法地改变开局金币和手牌
+    const state = initGameState(players, 1000, 'tarot-17')
 
     expect(state.turnOrder).toEqual(['u1', 'u2', 'u3'])
     expect(state.currentPlayerIndex).toBe(0)
@@ -81,5 +82,13 @@ describe('initGameState', () => {
     const players = [makeRoomPlayer({ uid: 'u1', seat: 0 }), makeRoomPlayer({ uid: 'u2', seat: 1 }), makeRoomPlayer({ uid: 'u3', seat: 2 })]
     const state = initGameState(players, 1000)
     expect(state.currentTarotId).toMatch(/^tarot-/)
+  })
+
+  it('the opening tarot resolves its instant effect at setup (Judgement gives ≤1-card players a card)', () => {
+    const players = [makeRoomPlayer({ uid: 'u1', seat: 0 }), makeRoomPlayer({ uid: 'u2', seat: 1 }), makeRoomPlayer({ uid: 'u3', seat: 2 })]
+    const state = initGameState(players, 1000, 'tarot-20')
+    expect(state.currentTarotId).toBe('tarot-20')
+    expect(state.lastTarotChange).toMatchObject({ tarotId: 'tarot-20', previousTarotId: null, triggeredByUid: null })
+    for (const uid of ['u1', 'u2', 'u3']) expect(state.players[uid]!.tacticHand).toHaveLength(2)
   })
 })
