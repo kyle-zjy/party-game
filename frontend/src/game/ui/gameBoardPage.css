@@ -27,6 +27,11 @@
   gap: 10px;
   padding-bottom: 4px;
 }
+/* 子项不能被压缩：内容超过一屏时整体滚动。否则 overflow: hidden 的棋盘容器
+   （最小高度会被当成 0）会被挤到看不见。 */
+.mg-scroll-area > * {
+  flex-shrink: 0;
+}
 
 /* ---------- Top bar ---------- */
 .mg-topbar {

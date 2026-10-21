@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 'react-zoom-pan-pinch'
 import { BOARD_CELLS, isPropertyCell, isStartCell } from '../../../../shared/game/board'
 import type { BoardCell } from '../../../../shared/game/board'
@@ -86,9 +86,26 @@ export function GameBoard({
     const wrapperEl = wrapperRef.current
     if (!wrapperEl) return
     const fitScale = Math.min(wrapperEl.clientWidth, wrapperEl.clientHeight) / CANVAS_SIZE
+    // 容器还没有尺寸（被隐藏/布局未完成）时不适配，否则缩放为 0，棋盘消失
+    if (!(fitScale > 0)) return
     ref.setTransform(0, 0, fitScale, animationTime)
     ref.centerView(fitScale, animationTime)
   }, [])
+
+  // 容器尺寸从 0 变为可见、或旋转屏幕时重新适配一次
+  const lastSizeRef = useRef<string>('')
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      const size = `${el.clientWidth}x${el.clientHeight}`
+      if (size === lastSizeRef.current || el.clientWidth === 0 || el.clientHeight === 0) return
+      lastSizeRef.current = size
+      if (transformRef.current) applyFitToScreen(transformRef.current, 0)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [applyFitToScreen])
 
   const handleViewAll = useCallback(() => {
     // 不用 resetTransform()——它会回到 props 里固定写死的 initialScale，

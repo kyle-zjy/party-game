@@ -105,6 +105,9 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
         <HostLineBanner line={contextualHostLine(game, myUid, isHost, nicknameOf)} />
         <ActiveTarotStrip game={game} nicknameOf={nicknameOf} onOpen={() => setDrawer('tarot')} />
         <LadyWindowStrip game={game} />
+
+        <GameBoard players={animatedPlayers} currentUid={myUid} highlightPath={highlightPath} worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`} />
+
         <LadyStatusStrip
           game={game}
           myUid={myUid}
@@ -114,9 +117,6 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
           onOpenRules={() => setDrawer('ladyRules')}
           onCrazyCatch={() => setDrawer('crazy')}
         />
-
-        <GameBoard players={animatedPlayers} currentUid={myUid} highlightPath={highlightPath} worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`} />
-
         <TarotDiscardTray game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />
         <DrinkAckTray
           game={game}
