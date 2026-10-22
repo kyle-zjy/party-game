@@ -203,12 +203,13 @@
 
 /* ---------- 棋盘控制按钮：查看全图 / 定位我 ---------- */
 .mg-board-controls {
+  /* 放在棋盘右上角：棋盘下半部分可能被滚动区底边裁掉，右上角只要棋盘在屏幕上就一定能点到 */
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 8px;
+  top: 8px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  gap: 6px;
   z-index: 5;
 }
 .mg-board-ctrl-btn {
@@ -220,6 +221,7 @@
   color: var(--mg-text);
   border-radius: 999px;
   padding: 8px 12px;
+  min-height: 40px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -243,4 +245,119 @@
   font-size: 18px;
   line-height: 1;
   border-radius: 50%;
+}
+
+/* ---------- V1.6 中央区域：神鬼道 / 河道（坐标来自 PPTX） ---------- */
+.mg-board-center-quadrant {
+  /* 神鬼道竖排和河道占据了中轴，标题和塔罗移到左上象限（PPTX 中这里是牌堆区） */
+  left: 14%;
+  top: 14%;
+  right: 56%;
+  bottom: 56%;
+  gap: 10px;
+}
+.mg-board-center-quadrant .mg-board-center-label {
+  font-size: 30px;
+}
+.mg-river {
+  position: absolute;
+  top: 46.14%;
+  height: 7.72%;
+  background: linear-gradient(180deg, rgba(72, 216, 204, 0.08), rgba(72, 216, 204, 0.22), rgba(72, 216, 204, 0.08));
+  border-top: 2px dashed rgba(72, 216, 204, 0.45);
+  border-bottom: 2px dashed rgba(72, 216, 204, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.mg-river span {
+  font-size: 22px;
+  color: var(--mg-teal);
+  opacity: 0.7;
+}
+.mg-river-L {
+  left: 8.4%;
+  right: 51.6%;
+}
+.mg-river-R {
+  left: 51.6%;
+  right: 8.4%;
+}
+/* PPTX：桥是外圈左右两边 y 43.9%–56% 的 13 格梯子 */
+.mg-bridge {
+  position: absolute;
+  top: 43.9%;
+  height: 12.1%;
+  width: 2.6%;
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid rgba(242, 196, 108, 0.6);
+  border-right: 2px solid rgba(242, 196, 108, 0.6);
+  pointer-events: none;
+}
+.mg-bridge-L {
+  left: 4.9%;
+}
+.mg-bridge-R {
+  left: 92.56%;
+}
+.mg-bridge-step {
+  flex: 1;
+  border-bottom: 2px solid rgba(242, 196, 108, 0.45);
+}
+.mg-gods-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 36px;
+  border-radius: 8px;
+  border: 2px solid var(--mg-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mg-gods-heaven {
+  background: rgba(242, 196, 108, 0.16);
+  border-color: rgba(242, 196, 108, 0.5);
+}
+.mg-gods-hell {
+  background: rgba(255, 96, 124, 0.14);
+  border-color: rgba(255, 96, 124, 0.45);
+}
+.mg-gods-finish {
+  width: 80px;
+  height: 80px;
+  background: rgba(139, 92, 246, 0.28);
+  border-color: var(--mg-purple);
+  box-shadow: 0 0 24px var(--mg-purple-glow);
+}
+.mg-gods-closed {
+  opacity: 0.35;
+}
+.mg-gods-finish-label {
+  position: absolute;
+  font-size: 20px;
+  color: var(--mg-text);
+}
+.mg-gods-region-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 20px;
+  color: var(--mg-text-muted);
+  pointer-events: none;
+}
+.mg-bridge-token {
+  position: absolute;
+}
+.mg-token-god {
+  box-shadow: 0 0 0 3px var(--mg-teal), 0 0 14px var(--mg-teal-glow);
+}
+/* 当前行动玩家的棋子：金色光环 + 放大，所有人一眼能看到轮到谁 */
+.mg-token-turn {
+  outline: 3px solid var(--mg-gold);
+  outline-offset: 2px;
+  transform-origin: center;
+  scale: 1.25;
+  z-index: 3;
 }

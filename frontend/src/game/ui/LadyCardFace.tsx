@@ -13,8 +13,8 @@ export function LadyCardFace({ cardId, small = false }: { cardId: string; small?
         {suitInfo?.symbol}
       </span>
       {!small && <span className="mg-lady-face-name">{card.name}</span>}
-      <span className="mg-lady-face-count" title="德国心脏病数量">
-        ×{card.heartAttackCount}
+      <span className="mg-lady-face-count" title="德国心脏病计数（不是喝酒口数）">
+        ♥×{card.heartAttackCount}
       </span>
     </div>
   )

@@ -36,6 +36,14 @@ export type BoardEventKind =
   | 'truthOrDare'
   | 'changeTarot'
   | 'drawTacticCard'
+  /** V1.6 补充 Q14：踩中者下一次自己的回合跳过地图移动掷骰 */
+  | 'skipRoll'
+  /** V1.6 补充 Q14：下家下一次回合跳过地图移动掷骰 */
+  | 'nextSkipRoll'
+  /** V1.6 补充 Q14：银行向德州公共底池投入 1 金币（德州+1 / 德扑+1） */
+  | 'texasPot'
+  /** V1.6 补充 Q11：阿瓦隆发车任务 */
+  | 'avalonMission'
   | 'pendingRuling'
 
 export interface BoardCellBase {
@@ -81,12 +89,12 @@ export const BOARD_CELLS: BoardCell[] = [
   { id: 1, kind: 'event', color: 'Y', x: 14.01, y: 8.12, effectKind: 'changeTarot', effectN: null, label: '更换塔罗' },
   { id: 2, kind: 'property', color: 'R', x: 18.01, y: 8.12, propertyName: '子女宫', propertySet: 'R', propertySetIndex: 2 },
   { id: 3, kind: 'blank', color: 'B', x: 21.87, y: 8.12 },
-  { id: 4, kind: 'event', color: 'G', x: 25.87, y: 8.12, effectKind: 'pendingRuling', effectN: '停骰一次：具体规则待确认（跳过本回合掷骰还是跳过整个回合未写明），本轮由房主现场裁定', label: '停骰一次' },
+  { id: 4, kind: 'event', color: 'G', x: 25.87, y: 8.12, effectKind: 'skipRoll', effectN: null, label: '停骰一次' },
   { id: 5, kind: 'event', color: 'Y', x: 29.84, y: 8.12, effectKind: 'drinkPrev', effectN: 2, label: '上家喝2口' },
   { id: 6, kind: 'event', color: 'R', x: 33.89, y: 8.11, effectKind: 'coin', effectN: 1, label: '金币+1' },
   { id: 7, kind: 'event', color: 'B', x: 37.89, y: 8.1, effectKind: 'forward', effectN: 4, label: '前进4格' },
   { id: 8, kind: 'event', color: 'G', x: 41.89, y: 8.1, effectKind: 'truthOrDare', effectN: null, label: 'T or D' },
-  { id: 9, kind: 'event', color: 'Y', x: 45.89, y: 8.11, effectKind: 'pendingRuling', effectN: '德州+1：具体含义待确认（补发底牌还是推进公共牌阶段未写明），本轮由房主现场裁定', label: '德州+1' },
+  { id: 9, kind: 'event', color: 'Y', x: 45.89, y: 8.11, effectKind: 'texasPot', effectN: 1, label: '德州+1' },
   { id: 10, kind: 'blank', color: 'R', x: 49.92, y: 8.1 },
   { id: 11, kind: 'property', color: 'B', x: 53.93, y: 8.11, propertyName: '玄秘宫', propertySet: 'B', propertySetIndex: 3 },
   { id: 12, kind: 'event', color: 'G', x: 57.88, y: 8.11, effectKind: 'drinkTarget', effectN: 1, label: '指定喝1口' },
@@ -94,16 +102,16 @@ export const BOARD_CELLS: BoardCell[] = [
   { id: 14, kind: 'event', color: 'R', x: 65.89, y: 8.1, effectKind: 'drinkSelf', effectN: 2, label: '喝2口' },
   { id: 15, kind: 'blank', color: 'B', x: 69.89, y: 8.1 },
   { id: 16, kind: 'event', color: 'G', x: 73.89, y: 8.11, effectKind: 'back', effectN: 3, label: '后退3格' },
-  { id: 17, kind: 'event', color: 'Y', x: 77.89, y: 8.12, effectKind: 'pendingRuling', effectN: '发车任务：阿瓦隆任务触发，人数配置待房主裁定，本阶段暂不自动结算', label: '发车任务' },
+  { id: 17, kind: 'event', color: 'Y', x: 77.89, y: 8.12, effectKind: 'avalonMission', effectN: null, label: '发车任务' },
   { id: 18, kind: 'event', color: 'R', x: 81.92, y: 8.12, effectKind: 'drinkNext', effectN: 1, label: '下家喝1口' },
   { id: 19, kind: 'blank', color: 'B', x: 85.94, y: 8.12 },
   { id: 20, kind: 'start', color: 'G', x: 91.86, y: 8.14 },
   { id: 21, kind: 'blank', color: 'Y', x: 91.86, y: 13.98 },
   { id: 22, kind: 'event', color: 'B', x: 91.86, y: 17.98, effectKind: 'forward', effectN: 4, label: '前进4格' },
-  { id: 23, kind: 'event', color: 'R', x: 91.86, y: 21.85, effectKind: 'pendingRuling', effectN: '发车任务：阿瓦隆任务触发，人数配置待房主裁定，本阶段暂不自动结算', label: '发车任务' },
+  { id: 23, kind: 'event', color: 'R', x: 91.86, y: 21.85, effectKind: 'avalonMission', effectN: null, label: '发车任务' },
   { id: 24, kind: 'blank', color: null, x: 91.86, y: 25.85 },
   { id: 25, kind: 'event', color: 'Y', x: 91.86, y: 29.82, effectKind: 'back', effectN: 3, label: '后退3格' },
-  { id: 26, kind: 'event', color: 'B', x: 91.87, y: 33.86, effectKind: 'pendingRuling', effectN: '德州+1：具体含义待确认（补发底牌还是推进公共牌阶段未写明），本轮由房主现场裁定', label: '德州+1' },
+  { id: 26, kind: 'event', color: 'B', x: 91.87, y: 33.86, effectKind: 'texasPot', effectN: 1, label: '德州+1' },
   { id: 27, kind: 'property', color: 'R', x: 91.88, y: 37.87, propertyName: '命宫', propertySet: 'R', propertySetIndex: 1 },
   { id: 28, kind: 'event', color: 'G', x: 91.88, y: 41.87, effectKind: 'drinkSelf', effectN: 1, label: '喝1口' },
   { id: 29, kind: 'event', color: 'Y', x: 91.87, y: 57.85, effectKind: 'truthOrDare', effectN: null, label: 'T or D' },
@@ -120,11 +128,11 @@ export const BOARD_CELLS: BoardCell[] = [
   { id: 40, kind: 'property', color: 'Y', x: 77.89, y: 91.86, propertyName: '福德宫', propertySet: 'Y', propertySetIndex: 3 },
   { id: 41, kind: 'blank', color: 'R', x: 73.89, y: 91.85 },
   { id: 42, kind: 'event', color: 'B', x: 69.89, y: 91.83, effectKind: 'drinkPrev', effectN: 1, label: '上家喝1口' },
-  { id: 43, kind: 'event', color: 'G', x: 65.89, y: 91.83, effectKind: 'pendingRuling', effectN: '发车任务：阿瓦隆任务触发，人数配置待房主裁定，本阶段暂不自动结算', label: '发车任务' },
+  { id: 43, kind: 'event', color: 'G', x: 65.89, y: 91.83, effectKind: 'avalonMission', effectN: null, label: '发车任务' },
   { id: 44, kind: 'event', color: 'Y', x: 61.88, y: 91.83, effectKind: 'coin', effectN: 1, label: '金币+1' },
   { id: 45, kind: 'event', color: 'R', x: 57.88, y: 91.85, effectKind: 'forward', effectN: 4, label: '前进4格' },
   { id: 46, kind: 'event', color: 'B', x: 53.93, y: 91.85, effectKind: 'back', effectN: 3, label: '后退3格' },
-  { id: 47, kind: 'event', color: 'G', x: 49.92, y: 91.83, effectKind: 'pendingRuling', effectN: '下家禁骰：具体范围待确认（跳过掷骰还是跳过整个回合未写明），本轮由房主现场裁定', label: '下家禁骰' },
+  { id: 47, kind: 'event', color: 'G', x: 49.92, y: 91.83, effectKind: 'nextSkipRoll', effectN: null, label: '下家禁骰' },
   { id: 48, kind: 'event', color: 'Y', x: 45.89, y: 91.85, effectKind: 'drawTacticCard', effectN: null, label: '抽1张手牌' },
   { id: 49, kind: 'blank', color: 'R', x: 41.89, y: 91.83 },
   { id: 50, kind: 'event', color: 'B', x: 37.89, y: 91.83, effectKind: 'drinkSelf', effectN: 1, label: '喝一口' },
@@ -132,7 +140,7 @@ export const BOARD_CELLS: BoardCell[] = [
   { id: 52, kind: 'blank', color: 'Y', x: 29.84, y: 91.86 },
   { id: 53, kind: 'event', color: 'R', x: 25.87, y: 91.86, effectKind: 'drinkNext', effectN: 2, label: '下家喝两口' },
   { id: 54, kind: 'property', color: 'B', x: 21.87, y: 91.86, propertyName: '田宅宫', propertySet: 'B', propertySetIndex: 1 },
-  { id: 55, kind: 'event', color: 'G', x: 18.01, y: 91.86, effectKind: 'pendingRuling', effectN: '德扑+1：具体含义待确认（补发底牌还是推进公共牌阶段未写明），本轮由房主现场裁定', label: '德扑+1' },
+  { id: 55, kind: 'event', color: 'G', x: 18.01, y: 91.86, effectKind: 'texasPot', effectN: 1, label: '德扑+1' },
   { id: 56, kind: 'event', color: 'Y', x: 14.01, y: 91.86, effectKind: 'truthOrDare', effectN: null, label: 'T or D' },
   { id: 57, kind: 'start', color: 'R', x: 8.14, y: 91.86 },
   { id: 58, kind: 'blank', color: null, x: 8.15, y: 85.98 },
@@ -149,7 +157,7 @@ export const BOARD_CELLS: BoardCell[] = [
   { id: 69, kind: 'property', color: 'R', x: 8.15, y: 29.88, propertyName: '迁移宫', propertySet: 'R', propertySetIndex: 3 },
   { id: 70, kind: 'blank', color: 'B', x: 8.15, y: 25.91 },
   { id: 71, kind: 'event', color: 'G', x: 8.15, y: 21.91, effectKind: 'drinkTarget', effectN: 1, label: '指定喝1口' },
-  { id: 72, kind: 'event', color: 'Y', x: 8.14, y: 18.04, effectKind: 'pendingRuling', effectN: '发车任务：阿瓦隆任务触发，人数配置待房主裁定，本阶段暂不自动结算', label: '发车任务' },
+  { id: 72, kind: 'event', color: 'Y', x: 8.14, y: 18.04, effectKind: 'avalonMission', effectN: null, label: '发车任务' },
   { id: 73, kind: 'event', color: 'R', x: 8.14, y: 14.04, effectKind: 'drinkSelf', effectN: 1, label: '喝1口' },
 ]
 

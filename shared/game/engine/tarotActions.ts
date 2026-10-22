@@ -14,7 +14,7 @@ import { drawRandomTacticCardId, getTacticCard, TACTIC_HAND_LIMIT } from '../car
 import type { GamePlayerState, GameState, PendingDecision, TarotEffectLine } from '../types'
 import { GameActionError } from './errors'
 import { appendHistory } from './history'
-import { clonePlayers, pushDrinkAck, requirePlayer } from './stateHelpers'
+import { clonePlayers, pushCoinPenalty, pushDrinkAck, requirePlayer } from './stateHelpers'
 import { payFromBank, TAROT_ID } from './tarotEffects'
 
 export interface TarotRevealResult {
@@ -324,9 +324,13 @@ export function applyBanCatch(
   violatorUid: string,
   correct: boolean,
   now: number,
+  incidentId: string | null = null,
 ): GameState {
   if (callerUid !== hostUid) {
     throw new GameActionError('INVALID_GAME_ACTION', '只有房主可以录入禁令的判定结果')
+  }
+  if (incidentId && state.processedIncidentIds.includes(incidentId)) {
+    throw new GameActionError('INVALID_GAME_ACTION', '这次违规已经录入过了')
   }
   if (catcherUid === violatorUid) throw new GameActionError('INVALID_GAME_ACTION', '不能抓自己')
   requirePlayer(state, catcherUid)
@@ -346,6 +350,10 @@ export function applyBanCatch(
       now,
       catcherUid,
     )
+  } else if (state.rulesVersion === 2) {
+    // V1.6：1 金币惩罚先进入待处理，本人可以正常支付或用骗子酒馆吹牛
+    pendingDrinkAcks = pushCoinPenalty(pendingDrinkAcks, catcherUid, 1, '禁令：错误指认', now)
+    history = appendHistory(history, '错误指认违反禁令，罚 1 金币（待支付，可以选择吹牛）。', now, catcherUid)
   } else {
     const catcher = players[catcherUid]!
     const fine = Math.min(1, catcher.coins)
@@ -353,5 +361,11 @@ export function applyBanCatch(
     history = appendHistory(history, `错误指认违反禁令，罚 ${fine} 金币。`, now, catcherUid)
   }
 
-  return { ...state, players, pendingDrinkAcks, history }
+  return {
+    ...state,
+    players,
+    pendingDrinkAcks,
+    history,
+    processedIncidentIds: incidentId ? [...state.processedIncidentIds, incidentId].slice(-50) : state.processedIncidentIds,
+  }
 }

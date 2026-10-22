@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { GameController } from '../useGameController'
 import type { GameRoomPlayer } from '../../../../shared/gameRoomTypes'
 import type { GameState, LadyEvent } from '../../../../shared/game/types'
-import { getLadyCard, KING_GUIDE } from '../../../../shared/game/cards/ladyCards'
+import { getLadyCard } from '../../../../shared/game/cards/ladyCards'
 import { formatLadyCard } from '../../../../shared/game/cards/ladyDeck'
 import { isAwayWithPass, KING_TASK_MAX_LENGTH, validateKingTaskContent } from '../../../../shared/game/engine/ladyEvents'
 import { ladyCardDisplayName, ladyEventStepText, ladyEventWaitingOn, ladyRuleLabel } from '../tutorial/ladyGuide'
@@ -11,20 +11,39 @@ import { LadyCardFace } from './LadyCardFace'
 
 const CAMERA_SECONDS = 10
 
-/** 翻开的主牌：牌面 + 规则状态 + 牌义。每次翻牌只播一次翻牌动画 */
-export function LadyCardReveal({ game, cardId }: { game: GameState; cardId: string }) {
+/**
+ * 翻开的主牌：牌面 + 规则状态 + 牌义。每次翻牌只播一次翻牌动画。
+ * compact：事件进行中的紧凑版（小牌面 + 一行标题，牌义收起，点"查看规则"展开），避免长说明把操作按钮挤出屏幕。
+ */
+export function LadyCardReveal({ game, cardId, compact = false }: { game: GameState; cardId: string; compact?: boolean }) {
   const animate = useAnimateOnce(`lady-${game.startedAt}-${game.turnNumber}-${cardId}`)
+  const [open, setOpen] = useState(false)
   const card = getLadyCard(cardId)
   const ruleLabel = ladyRuleLabel(game, cardId)
-  const active = ruleLabel !== '候选规则 · 未启用'
+  const active = ruleLabel !== '旧房间 · 房主裁定'
+  const title = `${formatLadyCard(cardId)} ${active ? ladyCardDisplayName(cardId) : card.name}`
+  const rule = active ? (card.candidate?.rule ?? card.description) : card.description
+  if (compact) {
+    return (
+      <div className={`mg-lady-compact${animate ? ' mg-card-flip-in' : ''}`}>
+        <LadyCardFace cardId={cardId} small />
+        <div className="mg-lady-compact-body">
+          <p className="mg-display mg-lady-compact-title">{title}</p>
+          <span className={`mg-rule-badge${card.ruleStatus === 'confirmed' ? ' mg-rule-badge-confirmed' : ''}`}>{ruleLabel}</span>
+          <button type="button" className="mg-link-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            {open ? '收起规则' : '查看规则'}
+          </button>
+          {open && <p className="mg-faint">{rule}</p>}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className={`mg-lady-card-reveal${animate ? ' mg-card-flip-in' : ''}`}>
       <LadyCardFace cardId={cardId} />
-      <p className="mg-display mg-lady-card-name">
-        {formatLadyCard(cardId)} {active ? ladyCardDisplayName(cardId) : card.name}
-      </p>
+      <p className="mg-display mg-lady-card-name">{title}</p>
       <span className={`mg-rule-badge${card.ruleStatus === 'confirmed' ? ' mg-rule-badge-confirmed' : ''}`}>{ruleLabel}</span>
-      <p className="mg-muted">{active ? (card.candidate?.rule ?? card.description) : card.description}</p>
+      <p className="mg-muted">{rule}</p>
     </div>
   )
 }
@@ -49,7 +68,7 @@ export function LadyEventPanel({ game, event, myUid, hostUid, roomPlayers, nickn
 
   return (
     <div className="mg-action-panel mg-stack">
-      <LadyCardReveal game={game} cardId={event.cardId} />
+      <LadyCardReveal game={game} cardId={event.cardId} compact />
       <p className="mg-lady-step">{ladyEventStepText(game, event, nicknameOf)}</p>
       {iNeedToAct ? (
         <p className="mg-lady-you-act">轮到你操作 ↓</p>
@@ -190,7 +209,7 @@ function StepControls({
           </div>
         )}
         <p className="mg-faint">执行人：{isActor ? '你' : nicknameOf(event.actingUid)}。完成后由房主确认；不想做可以跳过，跳过不扣金币、不罚酒。</p>
-        <div className="mg-action-row">
+        <div className="mg-action-row mg-sticky-actions">
           {(isActor || isHost) && (
             <button type="button" className="mg-btn mg-btn-ghost" disabled={busy} onClick={() => void controller.kingTaskResolve(id, false)}>
               跳过任务
@@ -217,7 +236,7 @@ function StepControls({
         )}
         {isHost && (
           <button type="button" className="mg-btn mg-btn-ghost mg-lady-cancel" disabled={busy} onClick={() => void controller.kingWriteTask(id, null)}>
-            房主：跳过留任务（下一任国王没有任务）
+            房主：取消留任务（国王传承中断）
           </button>
         )}
       </>
@@ -288,22 +307,35 @@ function KingTaskWriter({ busy, onSubmit }: { busy: boolean; onSubmit: (content:
   const check = text.trim() ? validateKingTaskContent(text) : null
   return (
     <div className="mg-stack">
-      <p className="mg-lady-you-act">{KING_GUIDE.write}</p>
-      <p className="mg-faint">写一个线下轻松完成的小挑战，例如"模仿一种动物叫三声""用方言说一句祝酒词"。不能有危险、侮辱、泄露隐私、强迫身体接触或强制喝酒的内容。</p>
-      <textarea className="mg-text-input" rows={2} maxLength={KING_TASK_MAX_LENGTH} placeholder="给下一任国王的任务" value={text} onChange={(e) => setText(e.target.value)} />
-      {check && !check.ok && <p className="mg-lady-warning">{check.reason}</p>}
-      <button
-        type="button"
-        className="mg-btn mg-btn-gold"
-        disabled={busy || !check?.ok}
-        onClick={() => {
-          void onSubmit(text).then((ok) => {
-            if (ok) setText('')
-          })
+      <p className="mg-faint">写一个线下轻松完成的小挑战（例如"模仿一种动物叫三声"）。不能有危险、侮辱、隐私、身体接触或强制喝酒的内容。</p>
+      <textarea
+        className="mg-text-input"
+        rows={2}
+        maxLength={KING_TASK_MAX_LENGTH}
+        placeholder="给下一任国王的任务"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={(e) => {
+          // 手机键盘弹出后视口变矮：把输入框滚到可见位置，提交按钮吸底
+          const el = e.currentTarget
+          setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)
         }}
-      >
-        留下任务（{text.trim().length}/{KING_TASK_MAX_LENGTH}）
-      </button>
+      />
+      <div className="mg-sticky-actions">
+        {check && !check.ok && <p className="mg-lady-warning">{check.reason}</p>}
+        <button
+          type="button"
+          className="mg-btn mg-btn-gold"
+          disabled={busy || !check?.ok}
+          onClick={() => {
+            void onSubmit(text).then((ok) => {
+              if (ok) setText('')
+            })
+          }}
+        >
+          留下任务（{text.trim().length}/{KING_TASK_MAX_LENGTH}）
+        </button>
+      </div>
     </div>
   )
 }

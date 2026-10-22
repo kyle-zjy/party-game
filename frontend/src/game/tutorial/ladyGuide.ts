@@ -11,11 +11,12 @@ export function ladyCardDisplayName(cardId: string): string {
   return card.candidate?.name ?? card.name
 }
 
-/** 规则状态标签：正式 / 候选（本局预览启用）/ 候选（未启用，房主裁定） */
-export function ladyRuleLabel(game: Pick<GameState, 'ladyRuleset'>, cardId: string): string {
+/** 规则状态标签：K 正式 / V1.6 房间数字版补充 / 旧房间房主裁定 */
+export function ladyRuleLabel(game: Pick<GameState, 'ladyRuleset' | 'rulesVersion'>, cardId: string): string {
   const card = getLadyCard(cardId)
   if (card.ruleStatus === 'confirmed') return '正式规则'
-  return isLadyRuleActive(game, card) ? '候选规则 · 开发预览' : '候选规则 · 未启用'
+  if (game.rulesVersion === 2) return 'V1.6 数字版补充'
+  return isLadyRuleActive(game, card) ? '候选规则 · 开发预览' : '旧房间 · 房主裁定'
 }
 
 /** 当前步骤需要谁操作（用于"等待 X"） */

@@ -5,13 +5,24 @@
  * 的内边距，把游戏页面撑满整个视口，不依赖修改 `#root` 本身的全局样式
  * （那样会影响其它仍在使用素色卡片风格的页面）。
  */
+/* 游戏页撑满视口：去掉 #root 的内边距（否则文档比视口高 16–48px，整页可以被拖动、弹窗位置跟着偏移） */
+#root:has(.mg-game-page) {
+  padding: 0;
+  min-height: 0;
+}
+html:has(.mg-game-page),
+html:has(.mg-game-page) body {
+  overflow: hidden;
+  height: 100%;
+}
 .mg-game-page {
-  margin: -16px -16px -32px;
-  padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
-  gap: 10px;
+  margin: 0 auto;
+  padding: 8px 10px 0;
+  gap: 8px;
   max-width: 430px;
-  width: calc(100% + 32px);
+  width: 100%;
   height: 100svh;
+  height: 100dvh;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -194,13 +205,49 @@
    用户反馈的"操作按钮被底部导航或安全区域遮挡"由此解决：
    `env(safe-area-inset-bottom)` 仍然保留，确保 iPhone 的手势条不会
    盖住最下面的按钮。 */
+/*
+ * 底部操作区：长面板（K 国王任务、小姐牌小游戏、战术响应、德州、阿瓦隆……）不能把整页撑出屏幕。
+ * 修复前：.mg-game-page 是 overflow:hidden 的固定高度容器，操作区 flex-shrink:0 又没有最大高度，
+ * 长面板会把中间滚动区压成 0、把自己的提交按钮推到屏幕外，整页又不能滚动——玩家点不到按钮，房间卡住。
+ * 修复后：操作区最多占 58% 视口（事件模式 72%），超出部分在操作区内部纵向滚动；
+ * 中间滚动区至少保留一块高度给棋盘；主要按钮用 sticky 吸底。
+ */
 .mg-bottom-dock {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 58svh;
+  max-height: 58dvh;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 8px;
+  gap: 8px;
+  padding-top: 4px;
   padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.mg-bottom-dock.mg-dock-event {
+  max-height: 72svh;
+  max-height: 72dvh;
+}
+.mg-bottom-dock > * {
+  flex-shrink: 0;
+}
+.mg-scroll-area {
+  min-height: 22svh;
+  min-height: 22dvh;
+}
+/* 事件面板里的主要按钮：滚动时吸在操作区底部，始终能点到 */
+.mg-sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0 2px;
+  background: linear-gradient(180deg, rgba(23, 28, 53, 0), var(--mg-surface) 30%);
 }
 
 .mg-action-panel {
@@ -944,4 +991,263 @@
   margin: 0;
   padding-left: 18px;
   font-size: 12.5px;
+}
+
+/* ---------- V1.6 面板：响应栈 / 德州 / 阿瓦隆 / 梦幻 / 终局 ---------- */
+.mg-v16-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid var(--mg-border);
+  background: rgba(23, 28, 53, 0.75);
+}
+.mg-v16-panel p {
+  margin: 0;
+}
+.mg-stack-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--mg-text);
+}
+.mg-texas-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mg-texas-card {
+  min-width: 40px;
+  padding: 8px 4px;
+  text-align: center;
+  border-radius: 6px;
+  background: #f3eefc;
+  color: #101427;
+  font-weight: 700;
+  font-size: 15px;
+}
+.mg-texas-card-back {
+  background: repeating-linear-gradient(45deg, var(--mg-surface-raised), var(--mg-surface-raised) 4px, var(--mg-surface) 4px, var(--mg-surface) 8px);
+  color: var(--mg-text-faint);
+}
+.mg-trust-note {
+  font-size: 11px !important;
+  opacity: 0.85;
+}
+.mg-card-picker {
+  display: flex;
+  gap: 8px;
+}
+.mg-card-picker .mg-text-input {
+  flex: 1;
+}
+.mg-score-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.mg-score-table th,
+.mg-score-table td {
+  padding: 6px 4px;
+  text-align: center;
+  border-bottom: 1px solid var(--mg-border);
+}
+.mg-score-table th {
+  color: var(--mg-text-muted);
+  font-weight: 500;
+}
+
+/* 事件进行中的紧凑牌面：小牌 + 标题 + 可展开规则 */
+.mg-lady-compact {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.mg-lady-compact-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+.mg-lady-compact-body p {
+  margin: 0;
+}
+.mg-lady-compact-title {
+  font-size: 18px;
+  color: var(--mg-gold);
+}
+.mg-lady-compact .mg-rule-badge {
+  margin: 0;
+}
+.mg-link-btn {
+  background: none;
+  border: none;
+  padding: 6px 0;
+  min-height: 32px;
+  color: var(--mg-teal);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ---------- 手机首屏压缩（真实截图验收后调整） ---------- */
+.mg-topbar-compact {
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  border-radius: var(--mg-radius-md);
+  border: 1px solid var(--mg-border);
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 44px;
+}
+.mg-topbar-meta {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--mg-text-muted);
+  white-space: nowrap;
+}
+.mg-topbar-compact .mg-topbar-turn-name {
+  font-size: 18px;
+  max-width: 7em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-topbar-compact .mg-topbar-turn-phase {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.mg-topbar-compact .mg-topbar-turn-badge {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.mg-topbar-compact .mg-btn-icon {
+  margin-left: 4px;
+  min-width: 40px;
+  min-height: 40px;
+}
+.mg-topbar-compact:not(.mg-topbar-turn-mine) .mg-btn-icon {
+  margin-left: auto;
+}
+.mg-legacy-badge {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: #241704;
+  background: var(--mg-coral);
+}
+
+.mg-host-banner-compact {
+  width: 100%;
+  text-align: left;
+  align-items: center;
+  padding: 8px 10px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.mg-host-banner-compact .mg-host-avatar {
+  width: 28px;
+  height: 28px;
+}
+.mg-host-banner-compact .mg-host-text {
+  display: flex;
+  flex-direction: column;
+}
+.mg-host-banner-compact .mg-host-message {
+  font-size: 13.5px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mg-host-banner-open .mg-host-message {
+  -webkit-line-clamp: unset;
+  display: block;
+}
+.mg-host-chevron {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--mg-teal);
+}
+
+.mg-table-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mg-table-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.mg-table-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: 44px;
+  padding: 5px 8px;
+  border-radius: var(--mg-radius-sm);
+  border: 1px solid var(--mg-border);
+  background: rgba(23, 28, 53, 0.7);
+  color: var(--mg-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.mg-table-chip-open {
+  border-color: var(--mg-gold);
+}
+.mg-table-chip-tarot {
+  border-color: rgba(139, 92, 246, 0.5);
+}
+.mg-table-chip-label {
+  font-size: 10.5px;
+  color: var(--mg-text-muted);
+}
+.mg-table-chip-value {
+  font-size: 12.5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mg-table-hint {
+  margin: 0;
+  font-size: 12px;
+}
+.mg-sheet-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mg-board-ctrl-follow {
+  border-color: var(--mg-gold) !important;
+  color: var(--mg-gold) !important;
+}
+.mg-legacy-note {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #ffd6de;
+  background: rgba(255, 96, 124, 0.12);
+  border-left: 3px solid var(--mg-coral);
+}
+.mg-lady-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mg-lady-result p {
+  margin: 0;
 }

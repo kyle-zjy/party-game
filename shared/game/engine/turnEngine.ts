@@ -9,8 +9,7 @@
  *
  * 自然 6：LANDING 结算完后，如果这次掷骰给予额外掷骰（通常是自然 6，愚者塔罗
  * 下不给）且本回合还没用过，回到 ROLLING、extraRollPending = true；额外掷骰的
- * 落点只结算落点，不额外翻主牌。额外骰又摇出 6 是否继续连锁规则书标为待确认，
- * 目前不连锁。
+ * 落点只结算落点，不额外翻主牌。V1.6 补充 Q7：额外骰再出自然 6 不连锁，最多 2 次地图掷骰。
  *
  * 世界塔罗的持续效果都通过 tarotEffects.ts 在对应结算点读取当前塔罗，
  * 即时效果通过 tarotActions.ts 在"更换塔罗"格子上翻牌时结算一次。
@@ -20,12 +19,19 @@ import { getLadyCard } from '../cards/ladyCards'
 import { drawFromLadyDeck, formatLadyCard, heartAttackCheck, LADY_SUIT_LABEL, LADY_WINDOW_SIZE } from '../cards/ladyDeck'
 import { drawRandomTacticCardId, getTacticCard, TACTIC_HAND_LIMIT } from '../cards/tacticCards'
 import { drawRandomTarotId, getTarotCard } from '../cards/tarotCards'
+import { drawPrompt } from '../cards/truthOrDareBank'
 import type { DrinkAckChoice, GamePlayerState, GameState, PendingDecision, PendingDrinkAck } from '../types'
 import { buildRollRecord } from './dice'
 import { GameActionError } from './errors'
 import { appendHistory } from './history'
 import { computeNewPosition, startCellIdForColor } from './movement'
 import { startLadyEvent } from './ladyEvents'
+import { addTexasPotFromBank, applyCasino, openDreamChallenge } from './texas'
+import { startAvalonMission } from './avalon'
+import { applyZoneRollEffects, moveOffRing, walkRing } from './zones'
+import { startEndgame } from './endgame'
+import { applyPlayActiveTactic } from './tacticStack'
+import { activeProperties } from './properties'
 import { clonePlayers, neighborUid, pushDrinkAck, requirePlayer } from './stateHelpers'
 import { revealTarot } from './tarotActions'
 import {
@@ -51,6 +57,7 @@ const DRINK_CHOICE_LABEL: Record<DrinkAckChoice, string> = {
   WATER: '以水代替',
   SKIP: '跳过',
   DEVIL: '改为付 1 金币并指定另一人喝 2 口',
+  PAY: '支付',
 }
 
 function requireCurrentPlayer(state: GameState, uid: string): void {
@@ -72,14 +79,17 @@ export function applyRollDice(state: GameState, uid: string, natural: number, no
     // 开局塔罗是恋人/正义时，需要先完成指定/裁定才能开始掷骰
     throw new GameActionError('INVALID_GAME_ACTION', '还有未处理的塔罗事件，处理完才能掷骰')
   }
+  if (state.endgame) throw new GameActionError('INVALID_GAME_ACTION', '已经有人抵达终点，地图回合已经结束')
+  if (state.turn.rollSkipped) throw new GameActionError('INVALID_GAME_ACTION', '本回合停骰，不能掷骰')
+  if (!state.turn.extraRollPending && state.players[uid]?.skipNextRoll) throw new GameActionError('INVALID_GAME_ACTION', '你本回合停骰，请点"停骰：直接翻主牌"')
   const roll = buildRollRecord(natural, state.currentTarotId)
   const player = requirePlayer(state, uid)
-  const destination = computeNewPosition(player.position, roll.effective)
 
   const parts = [`掷出 ${roll.natural} 点`]
   if (roll.tarotNote) parts.push(`（${roll.tarotNote}，实际移动 ${roll.effective} 格）`)
   else if (roll.grantsExtraRoll) parts.push('（自然 6！）')
-  parts.push(`，前往第 ${destination + 1} 格。`)
+  if (player.zone.kind === 'ring') parts.push(`，前往第 ${computeNewPosition(player.position, roll.effective) + 1} 格。`)
+  else parts.push(player.zone.kind === 'gods' ? '，在神鬼道上前进。' : '，在桥上前进。')
 
   return {
     ...state,
@@ -116,6 +126,9 @@ interface LandingContext {
   tarotNotes: string[]
   /** 落点效果可能翻开新塔罗，后续结算要用新的 */
   extra: Partial<GameState>
+  /** V1.6：落点结束后要开启的事件（阿瓦隆发车、CASINO、梦幻挑战候选人） */
+  followUps: ('AVALON' | 'CASINO')[]
+  dreamCandidates: string[]
 }
 
 export function applyResolveLanding(
@@ -146,18 +159,37 @@ export function applyResolveLanding(
     pendingDecision: null,
     tarotNotes: [...state.turn.tarotNotes],
     extra: {},
+    followUps: [],
+    dreamCandidates: [],
   }
   const player = ctx.players[uid]!
 
-  // 起点奖励：只有经过/停在自己颜色的起点才领取（棋盘四角的标注"X色人物由此过领取"）。
-  // 额外掷骰的移动同样会经过起点，规则书只说额外骰"只结算落点，不额外翻小姐牌"，
-  // 经过起点是移动本身的效果，照常结算。
-  if (passesCell(player.position, roll.effective, startCellIdForColor(player.color))) {
-    grantStartBonus(ctx, player)
+  if (state.rulesVersion === 2) {
+    resolveMapMoveV16(ctx, player, roll.effective)
+  } else {
+    // 起点奖励：只有经过/停在自己颜色的起点才领取（棋盘四角的标注"X色人物由此过领取"）。
+    // 额外掷骰的移动同样会经过起点，规则书只说额外骰"只结算落点，不额外翻小姐牌"，
+    // 经过起点是移动本身的效果，照常结算。
+    if (passesCell(player.position, roll.effective, startCellIdForColor(player.color))) {
+      grantStartBonus(ctx, player)
+    }
+    player.position = computeNewPosition(player.position, roll.effective)
+    resolveCell(ctx, player, 0)
   }
 
-  player.position = computeNewPosition(player.position, roll.effective)
-  resolveCell(ctx, player, 0)
+  let extra: Partial<GameState> = ctx.extra
+  let followState: GameState = { ...state, ...extra, players: ctx.players, history: ctx.history, pendingDrinkAcks: ctx.pendingDrinkAcks }
+  for (const f of ctx.followUps) {
+    followState = f === 'AVALON' ? startAvalonMission(followState, uid, now) : applyCasino(followState, now, rng, uid)
+  }
+  if (ctx.dreamCandidates.length > 0 && state.rulesVersion === 2) {
+    followState = { ...followState, dream: openDreamChallenge(followState, uid, ctx.dreamCandidates, now) }
+  }
+  ctx.players = followState.players
+  ctx.history = followState.history
+  ctx.pendingDrinkAcks = followState.pendingDrinkAcks
+  extra = { ...extra, texas: followState.texas, avalon: followState.avalon, dream: followState.dream, godsPathOpen: followState.godsPathOpen }
+  ctx.extra = extra
 
   const nextState: GameState = {
     ...state,
@@ -174,6 +206,56 @@ export function applyResolveLanding(
     history: ctx.history,
   }
   return { state: nextState, needsDecision: ctx.pendingDecision !== null }
+}
+
+/**
+ * V1.6 地图移动：掷骰前所在区域的天堂/地狱/桥效果 → 神鬼道/桥/外圈移动 → 外圈落点结算。
+ * 抵达终点时记录 reachedFinish，终局在回合结束时开启。
+ */
+function resolveMapMoveV16(ctx: LandingContext, player: GamePlayerState, steps: number): void {
+  const zoneFx = applyZoneRollEffects(ctx.players, player.uid, ctx.history, ctx.pendingDrinkAcks, ctx.now, (uid, amount) =>
+    payFromBank(effectiveState(ctx), ctx.players, uid, amount),
+  )
+  ctx.history = zoneFx.history
+  ctx.pendingDrinkAcks = zoneFx.acks
+
+  let remaining = steps
+  if (player.zone.kind !== 'ring') {
+    const r = moveOffRing(player, steps)
+    if (r.message) ctx.history = appendHistory(ctx.history, r.message, ctx.now, player.uid)
+    if (r.reachedFinish && !player.reachedFinish) {
+      player.reachedFinish = true
+      ctx.history = appendHistory(ctx.history, '抵达终点！完成本回合后进入终局结算。', ctx.now, player.uid)
+    }
+    if (r.offRing) return
+    remaining = r.ringLeftover
+    if (remaining === 0) {
+      resolveCell(ctx, player, 0)
+      return
+    }
+  }
+
+  const walk = walkRing(effectiveState(ctx), player, remaining)
+  for (let i = 0; i < walk.startPasses; i += 1) {
+    grantStartBonus(ctx, player)
+    player.laps += 1
+    if (!ctx.state.godsPathOpen && !(ctx.extra.godsPathOpen ?? false)) {
+      ctx.extra = { ...ctx.extra, godsPathOpen: true }
+      ctx.history = appendHistory(ctx.history, '第一位玩家跑完外圈一圈，神鬼道两端入口开启！之后停在第 11 格或第 48 格可以选择进入。', ctx.now, player.uid)
+    }
+  }
+  player.position = walk.position
+  if (walk.stop) {
+    ctx.pendingDecision = walk.stop
+    ctx.history = appendHistory(
+      ctx.history,
+      walk.stop.kind === 'RIVER_CROSS' ? '来到河边，需要选择过桥或渡河。' : '来到神鬼道入口，可以选择是否进入。',
+      ctx.now,
+      player.uid,
+    )
+    return
+  }
+  resolveCell(ctx, player, 0)
 }
 
 /** 从 oldPos 顺时针前进 steps 格的路径上（含终点）是否经过 cellId */
@@ -225,8 +307,12 @@ function resolveCell(ctx: LandingContext, player: GamePlayerState, depth: number
       ctx.history = appendHistory(ctx.history, `来到无主地产「${cell.propertyName}」，可以花 ${PROPERTY_BUY_PRICE} 金币买下。`, ctx.now, player.uid)
     } else if (owner.uid === player.uid) {
       ctx.history = appendHistory(ctx.history, `来到自己的地产「${cell.propertyName}」，不用付租金。`, ctx.now, player.uid)
+    } else if (owner.mortgaged.includes(cell.propertyName)) {
+      ctx.dreamCandidates.push(owner.uid)
+      ctx.history = appendHistory(ctx.history, `来到「${cell.propertyName}」，这块地产已抵押，抵押期间不收租。`, ctx.now, player.uid)
     } else {
-      const { rent, note } = rentForLanding(currentTarot(ctx), owner.properties, cell.propertyName)
+      ctx.dreamCandidates.push(owner.uid)
+      const { rent, note } = rentForLanding(currentTarot(ctx), activeProperties(owner), cell.propertyName)
       const paid = Math.min(rent, player.coins)
       player.coins -= paid
       owner.coins += paid
@@ -303,6 +389,11 @@ function resolveCell(ctx: LandingContext, player: GamePlayerState, depth: number
       const allowed = allowedTruthOrDareChoices(tarotId)
       // 女祭司/倒吊人只允许一种选择，直接定下来，不需要玩家再点一次
       ctx.pendingDecision = { kind: 'TRUTH_OR_DARE', choice: allowed.length === 1 ? allowed[0]! : null }
+      if (allowed.length === 1 && ctx.state.rulesVersion === 2) {
+        const prompt = drawPrompt(allowed[0]!, ctx.state.usedPromptIds, ctx.rng)
+        ctx.pendingDecision = { ...ctx.pendingDecision, promptId: prompt.id }
+        ctx.extra = { ...ctx.extra, usedPromptIds: [...ctx.state.usedPromptIds, prompt.id].slice(-40) }
+      }
       if (allowed.length === 1) {
         ctx.tarotNotes.push(tarotId === TAROT_ID.HIGH_PRIESTESS ? '女祭司：只能选真心话' : '倒吊人：只能选大冒险')
       }
@@ -335,6 +426,40 @@ function resolveCell(ctx: LandingContext, player: GamePlayerState, depth: number
       }
       return
     }
+    case 'skipRoll':
+    case 'nextSkipRoll':
+    case 'texasPot':
+    case 'avalonMission': {
+      if (ctx.state.rulesVersion !== 2) {
+        // V1.5 旧房间：这些格子原稿只有名称，仍交给房主现场裁定
+        ctx.pendingDecision = { kind: 'HOST_RULING', description: `${cell.label}：V1.5 原稿没有写明结算方式，请房主现场裁定` }
+        ctx.history = appendHistory(ctx.history, `格子效果：${cell.label}（房主裁定）。`, ctx.now, player.uid)
+        return
+      }
+      if (cell.effectKind === 'skipRoll' || cell.effectKind === 'nextSkipRoll') {
+        const targetUid = cell.effectKind === 'skipRoll' ? player.uid : neighborUid(ctx.state, player.uid, 1)
+        const target = ctx.players[targetUid]!
+        const already = target.skipNextRoll
+        target.skipNextRoll = true
+        ctx.history = appendHistory(
+          ctx.history,
+          cell.effectKind === 'skipRoll'
+            ? `停骰一次：下一次自己的回合不掷骰、不移动${already ? '（已经有一次待执行的停骰，不叠加）' : ''}。`
+            : `下家禁骰：下家下一次回合不掷骰、不移动${already ? '（对方已经有一次待执行的禁骰，不叠加）' : ''}。`,
+          ctx.now,
+          player.uid,
+        )
+        return
+      }
+      if (cell.effectKind === 'texasPot') {
+        ctx.extra = { ...ctx.extra, ...addTexasPotFromBank(effectiveState(ctx), 1) }
+        ctx.history = appendHistory(ctx.history, `${cell.label}：银行向德州公共底池投入 1 金币（不扣你的金币），并触发一次 CASINO。`, ctx.now, player.uid)
+        ctx.followUps.push('CASINO')
+        return
+      }
+      ctx.followUps.push('AVALON')
+      return
+    }
     case 'pendingRuling': {
       const description = typeof n === 'string' ? n : '这个格子的规则书没有写明结算方式'
       ctx.pendingDecision = { kind: 'HOST_RULING', description }
@@ -347,8 +472,9 @@ function resolveCell(ctx: LandingContext, player: GamePlayerState, depth: number
 }
 
 function resolveCollisions(ctx: LandingContext, mover: GamePlayerState): void {
-  const victims = Object.values(ctx.players).filter((p) => p.uid !== mover.uid && p.position === mover.position)
+  const victims = Object.values(ctx.players).filter((p) => p.uid !== mover.uid && p.position === mover.position && p.zone.kind === 'ring')
   if (victims.length === 0) return
+  ctx.dreamCandidates.push(...victims.map((v) => v.uid))
   const outcome = collisionOutcome(currentTarot(ctx))
   if (outcome.kind === 'back') ctx.tarotNotes.push('力量：碰撞不再退回起点，改为退 3 格')
 
@@ -413,7 +539,13 @@ export function applyChooseDrinkTargetDecision(state: GameState, uid: string, ta
 }
 
 /** 真心话大冒险第一步：选择真心话或大冒险（女祭司/倒吊人下已经自动选好） */
-export function applyTruthOrDareChoice(state: GameState, uid: string, choice: 'TRUTH' | 'DARE', now: number): GameState {
+export function applyTruthOrDareChoice(
+  state: GameState,
+  uid: string,
+  choice: 'TRUTH' | 'DARE',
+  now: number,
+  rng: () => number = Math.random,
+): GameState {
   requireCurrentPlayer(state, uid)
   const decision = state.turn.pendingDecision
   if (!decision || decision.kind !== 'TRUTH_OR_DARE' || decision.choice !== null) {
@@ -422,11 +554,34 @@ export function applyTruthOrDareChoice(state: GameState, uid: string, choice: 'T
   if (!allowedTruthOrDareChoices(state.currentTarotId).includes(choice)) {
     throw new GameActionError('INVALID_GAME_ACTION', '当前世界塔罗不允许这个选择')
   }
+  return withDrawnPrompt(
+    {
+      ...state,
+      history: appendHistory(state.history, `选择了「${choice === 'TRUTH' ? '真心话' : '大冒险'}」。`, now, uid),
+      turn: { ...state.turn, pendingDecision: { kind: 'TRUTH_OR_DARE', choice } },
+    },
+    rng,
+  )
+}
+
+/** V1.6：从题库抽一题写进共享状态（所有人看到同一题）；V1.5 旧房间继续用线下的牌 */
+function withDrawnPrompt(state: GameState, rng: () => number): GameState {
+  const d = state.turn.pendingDecision
+  if (state.rulesVersion !== 2 || !d || d.kind !== 'TRUTH_OR_DARE' || d.choice === null) return state
+  const prompt = drawPrompt(d.choice, state.usedPromptIds, rng)
   return {
     ...state,
-    history: appendHistory(state.history, `选择了「${choice === 'TRUTH' ? '真心话' : '大冒险'}」。`, now, uid),
-    turn: { ...state.turn, pendingDecision: { kind: 'TRUTH_OR_DARE', choice } },
+    usedPromptIds: [...state.usedPromptIds, prompt.id].slice(-40),
+    turn: { ...state.turn, pendingDecision: { ...d, promptId: prompt.id } },
   }
+}
+
+/** V1.6：房主觉得题目不合适时换一题（不受罚），游戏继续 */
+export function applyRedrawTruthOrDare(state: GameState, callerUid: string, hostUid: string, now: number, rng: () => number = Math.random): GameState {
+  if (callerUid !== hostUid && callerUid !== state.turn.currentPlayerUid) throw new GameActionError('INVALID_GAME_ACTION', '只有房主或当前玩家可以换题')
+  const d = state.turn.pendingDecision
+  if (!d || d.kind !== 'TRUTH_OR_DARE' || d.choice === null) throw new GameActionError('INVALID_GAME_ACTION', '现在没有可以换的题目')
+  return withDrawnPrompt({ ...state, history: appendHistory(state.history, '换了一道题。', now, callerUid) }, rng)
 }
 
 /** 拒绝真心话大冒险需要上缴的金币：floor(当前金币 / 2)。界面事先显示这个金额。 */
@@ -486,6 +641,25 @@ export function applyHostRulingAck(state: GameState, callerUid: string, hostUid:
   }
 }
 
+/**
+ * V1.6 补充 Q14：本回合有停骰/禁骰时，当前玩家点"停骰：直接翻主牌"——不掷骰、不移动、不触发落点，
+ * 照常翻小姐牌和出战术牌，结束回合时已经清除。
+ */
+export function applySkipRollTurn(state: GameState, uid: string, now: number): GameState {
+  requireCurrentPlayer(state, uid)
+  if (state.turn.phase !== 'ROLLING' || state.turn.extraRollPending) throw new GameActionError('INVALID_GAME_ACTION', '现在不是回合开始的掷骰阶段')
+  if (state.turn.pendingDecision) throw new GameActionError('INVALID_GAME_ACTION', '还有未处理的塔罗事件')
+  const players = clonePlayers(state)
+  if (!players[uid]!.skipNextRoll) throw new GameActionError('INVALID_GAME_ACTION', '你本回合没有停骰')
+  players[uid]!.skipNextRoll = false
+  return {
+    ...state,
+    players,
+    turn: { ...state.turn, phase: 'LADY_CARD', rollSkipped: true },
+    history: appendHistory(state.history, '停骰：本回合不掷骰、不移动，直接翻小姐牌。', now, uid),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 动作 4：从 LANDING 推进（额外掷骰 / 翻主牌）
 // ---------------------------------------------------------------------------
@@ -504,11 +678,12 @@ export function applyAdvanceAfterLanding(state: GameState, uid: string, now: num
   const roll = state.turn.lastRoll
   if (!roll) throw new GameActionError('INVALID_GAME_ACTION', '没有掷骰记录')
 
-  if (roll.grantsExtraRoll && !state.turn.extraRollPending && !state.turn.extraRollUsed) {
+  const finished = state.players[uid]?.reachedFinish === true
+  if (roll.grantsExtraRoll && !state.turn.extraRollPending && !state.turn.extraRollUsed && !finished) {
     return {
       ...state,
       turn: { ...state.turn, phase: 'ROLLING', extraRollPending: true, lastRoll: null, landingResolved: false },
-      history: appendHistory(state.history, '今晚手气爆棚！自然 6，额外掷一次骰子（只结算落点，不再翻主牌）。', now, uid),
+      history: appendHistory(state.history, '今晚手气爆棚！自然 6，额外掷一次骰子（只结算落点，不再翻主牌；额外骰再出 6 也不会再加一次）。', now, uid),
     }
   }
   if (state.turn.extraRollPending) {
@@ -538,6 +713,7 @@ export function applyRevealLadyCard(
   rng: () => number = Math.random,
 ): RevealLadyCardOutcome {
   requireCurrentPlayer(state, uid)
+  if (state.endgame) throw new GameActionError('INVALID_GAME_ACTION', '已经进入终局，不再翻小姐牌')
   if (state.turn.phase !== 'LADY_CARD') {
     throw new GameActionError('INVALID_GAME_ACTION', '现在不是翻主牌阶段')
   }
@@ -644,9 +820,25 @@ export function applyResolveDrinkAck(
   if (callerUid !== ack.targetUid && callerUid !== hostUid) {
     throw new GameActionError('INVALID_GAME_ACTION', '只有本人或房主可以确认这条喝酒提醒')
   }
-  if (choice === 'WATER' && drinkExemptionsDisabled(state.currentTarotId)) {
-    throw new GameActionError('INVALID_GAME_ACTION', '节制塔罗生效中：挡酒/免罚效果失效，不能以水代替')
+  // V1.6 补充 Q5：节制只禁用游戏机制里的挡酒/免罚（桃、替喝、吹牛免罚）；
+  // 以水代替和跳过是玩家的健康选择，任何时候都可以，也不产生金币处罚。
+  if (ack.bluff || ack.substituteOffer) throw new GameActionError('INVALID_GAME_ACTION', '这条记录正在吹牛或替喝流程中，请先完成那一步')
+
+  // 待处理的金币惩罚：只能支付（金币不足按实际余额），不能以水代替/跳过/恶魔转嫁
+  if (ack.coinPenalty) {
+    if (choice !== 'PAY') throw new GameActionError('INVALID_GAME_ACTION', '这是金币惩罚，只能支付或吹牛')
+    const players = clonePlayers(state)
+    const p = players[ack.targetUid]!
+    const paid = Math.min(ack.coinPenalty, p.coins)
+    p.coins -= paid
+    return {
+      ...state,
+      players,
+      pendingDrinkAcks: state.pendingDrinkAcks.filter((a) => a.id !== ackId),
+      history: appendHistory(state.history, `${ack.reason}：支付 ${paid} 金币${paid < ack.coinPenalty ? '（金币不足，按实际余额）' : ''}。`, now, ack.targetUid),
+    }
   }
+  if (choice === 'PAY') throw new GameActionError('INVALID_GAME_ACTION', '这是喝酒提醒，不需要支付金币')
 
   let players = state.players
   let pendingDrinkAcks = state.pendingDrinkAcks.filter((a) => a.id !== ackId)
@@ -692,7 +884,13 @@ export function applyPlayTacticCard(
   targetUid: string | null,
   now: number,
   rng: () => number = Math.random,
+  randomPick = 0,
 ): GameState {
+  if (state.rulesVersion === 2) {
+    // V1.6：主动牌进入统一响应窗口（闪 / 无懈可击 / 过河拆桥）
+    if (!targetUid) throw new GameActionError('INVALID_GAME_ACTION', '需要指定一名目标玩家')
+    return applyPlayActiveTactic(state, uid, cardId, targetUid, now, rng, randomPick)
+  }
   requireCurrentPlayer(state, uid)
   if (state.turn.phase !== 'TACTIC') {
     throw new GameActionError('INVALID_GAME_ACTION', '现在不是战术出牌阶段')
@@ -701,10 +899,11 @@ export function applyPlayTacticCard(
     throw new GameActionError('INVALID_GAME_ACTION', '本回合已经主动出过 1 张战术牌了')
   }
   const def = getTacticCard(cardId)
-  if (def.playMode !== 'active') {
+  // V1.5 旧房间：只有杀和顺手牵羊能主动打出（没有响应窗口）
+  if (cardId !== 'tactic-sha' && cardId !== 'tactic-shunshou') {
     throw new GameActionError(
       'INVALID_GAME_ACTION',
-      def.playMode === 'response' ? `「${def.name}」是响应牌，请在喝酒提醒上使用` : `「${def.name}」暂时不能打出：${def.description}`,
+      def.id === 'tactic-tao' ? `「${def.name}」是响应牌，请在喝酒提醒上使用` : `「${def.name}」在旧房间（V1.5 规则）里不能打出：旧房间没有响应窗口`,
     )
   }
   const players = clonePlayers(state)
@@ -767,7 +966,8 @@ export function applyUsePeach(
   }
   const ack = state.pendingDrinkAcks.find((a) => a.id === ackId)
   if (!ack) throw new GameActionError('INVALID_GAME_ACTION', '这条喝酒提醒不存在或已经处理过了')
-  if (ack.amountText) throw new GameActionError('INVALID_GAME_ACTION', '桃只能取消"口"为单位的惩罚')
+  if (ack.amountText || ack.coinPenalty) throw new GameActionError('INVALID_GAME_ACTION', '桃只能取消"口"为单位的惩罚')
+  if (ack.bluff || ack.substituteOffer) throw new GameActionError('INVALID_GAME_ACTION', '这条提醒正在吹牛或替喝流程中')
 
   const players = clonePlayers(state)
   const caller = players[callerUid]
@@ -842,12 +1042,23 @@ export function applySkipTactic(state: GameState, uid: string, now: number): Gam
 // ---------------------------------------------------------------------------
 
 export function applyEndTurn(state: GameState, uid: string, now: number): GameState {
+  if (state.finished || state.endgame) throw new GameActionError('INVALID_GAME_ACTION', '已经进入终局，不能再结束地图回合')
   requireCurrentPlayer(state, uid)
   if (state.turn.phase !== 'TACTIC') {
     throw new GameActionError('INVALID_GAME_ACTION', '现在不是可以结束回合的阶段')
   }
   if (state.turn.pendingDecision) {
     throw new GameActionError('INVALID_GAME_ACTION', '还有未处理的事项，不能结束回合')
+  }
+  if (state.tacticStack) throw new GameActionError('INVALID_GAME_ACTION', '还有一张战术牌在等待响应')
+  if (state.ladyEvent && state.ladyEvent.status === 'ACTIVE') throw new GameActionError('INVALID_GAME_ACTION', '小姐牌事件还没结束')
+  if (state.dream && state.dream.step !== 'DONE' && state.dream.step !== 'OPEN') throw new GameActionError('INVALID_GAME_ACTION', '梦幻挑战还没结束')
+  if (state.rulesVersion === 2 && state.players[uid]?.reachedFinish && !state.endgame) {
+    // 进入终局前，会影响金币/得分的未完成事项要先处理完（平时这些是非阻塞的）
+    if (state.pendingHeartAttack) throw new GameActionError('INVALID_GAME_ACTION', '进入终局前，请房主先确认德国心脏病的结果')
+    if (state.texas.betting) throw new GameActionError('INVALID_GAME_ACTION', '进入终局前，请先完成本阶段德州下注（房主可以结束下注）')
+    if (state.pendingDrinkAcks.some((a) => a.bluff)) throw new GameActionError('INVALID_GAME_ACTION', '进入终局前，请先完成正在进行的吹牛质疑')
+    return startEndgame(state, uid, now)
   }
   const nextIndex = (state.currentPlayerIndex + 1) % state.turnOrder.length
   const nextUid = state.turnOrder[nextIndex]
@@ -868,8 +1079,9 @@ export function applyEndTurn(state: GameState, uid: string, now: number): GameSt
   return {
     ...state,
     players,
-    // 本回合的小姐牌事件随回合结束清空；持续状态在 ladyStatus 里
+    // 本回合的小姐牌事件、未提出的梦幻挑战随回合结束清空；持续状态在 ladyStatus 里
     ladyEvent: null,
+    dream: null,
     currentPlayerIndex: nextIndex,
     turnNumber: state.turnNumber + 1,
     turn: {
@@ -884,6 +1096,7 @@ export function applyEndTurn(state: GameState, uid: string, now: number): GameSt
       playersWhoPlayedTacticThisTurn: [],
       tarotNotes,
       activeTacticUsed: false,
+      rollSkipped: false,
     },
     history,
   }

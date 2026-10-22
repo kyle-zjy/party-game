@@ -3,6 +3,7 @@ import { TransformWrapper, TransformComponent, type ReactZoomPanPinchRef } from 
 import { BOARD_CELLS, isPropertyCell, isStartCell } from '../../../../shared/game/board'
 import type { BoardCell } from '../../../../shared/game/board'
 import type { GamePlayerState, PlayerColor } from '../../../../shared/game/types'
+import { bridgePosition, GODS_FINISH_NODE, GODS_NODE_COUNT, godsNodePosition, godsRegion } from '../../../../shared/game/godsPath'
 import { CellDetailSheet } from './CellDetailSheet'
 import { CellIcon } from './cellIcons'
 import './board.css'
@@ -40,6 +41,8 @@ const COLOR_CLASS: Record<PlayerColor, string> = { R: 'mg-token-R', G: 'mg-token
  * 细节"来解决，不是同一个修复，缺一个都会导致重叠或裁剪重新出现。
  */
 const CANVAS_SIZE = 2000
+/** 画布四周的留白：让靠近棋盘边缘的格子在跟随视角下也能居中（limitToBounds 不会把它们卡在边上） */
+const CANVAS_PAD = 360
 
 function cellColorClass(cell: BoardCell): string {
   if (isStartCell(cell)) return `mg-cell-start mg-cell-${cell.color}`
@@ -49,18 +52,30 @@ function cellColorClass(cell: BoardCell): string {
 }
 
 /** 放大到这个倍率以上才显示完整文字；以下只显示颜色+图标（见文件头说明） */
-const DETAIL_ZOOM_THRESHOLD = 0.85
+const DETAIL_ZOOM_THRESHOLD = 0.72
+/** 默认游玩视角的缩放：格子约 60px、标签可读，手机宽度下大约能看到附近 5–9 格 */
+const FOLLOW_SCALE = 0.8
 
 export function GameBoard({
   players,
   currentUid,
   highlightPath,
   worldTarotLabel,
+  showCentral = false,
+  godsOpen = false,
+  riverGodUid = null,
+  activeUid,
 }: {
   players: GamePlayerState[]
   currentUid: string
+  /** 当前行动玩家：默认游玩视角跟随这个人 */
+  activeUid?: string
   highlightPath: number[]
   worldTarotLabel: string
+  /** V1.6：显示神鬼道 / 河道（旧房间不显示） */
+  showCentral?: boolean
+  godsOpen?: boolean
+  riverGodUid?: string | null
 }) {
   const [selectedCellId, setSelectedCellId] = useState<number | null>(null)
   const [showDetail, setShowDetail] = useState(false)
@@ -70,6 +85,7 @@ export function GameBoard({
   const playersByCell = useMemo(() => {
     const map = new Map<number, GamePlayerState[]>()
     for (const p of players) {
+      if (p.zone && p.zone.kind !== 'ring') continue
       const list = map.get(p.position) ?? []
       list.push(p)
       map.set(p.position, list)
@@ -88,11 +104,45 @@ export function GameBoard({
     const fitScale = Math.min(wrapperEl.clientWidth, wrapperEl.clientHeight) / CANVAS_SIZE
     // 容器还没有尺寸（被隐藏/布局未完成）时不适配，否则缩放为 0，棋盘消失
     if (!(fitScale > 0)) return
-    ref.setTransform(0, 0, fitScale, animationTime)
-    ref.centerView(fitScale, animationTime)
+    // 整图：把 2000px 棋盘本身（不含四周留白）居中放满容器
+    const x = (wrapperEl.clientWidth - CANVAS_SIZE * fitScale) / 2 - CANVAS_PAD * fitScale
+    const y = (wrapperEl.clientHeight - CANVAS_SIZE * fitScale) / 2 - CANVAS_PAD * fitScale
+    ref.setTransform(x, y, fitScale, animationTime)
   }, [])
 
-  // 容器尺寸从 0 变为可见、或旋转屏幕时重新适配一次
+  /**
+   * 棋盘视角：
+   * - follow（默认游玩视角）：聚焦当前行动玩家，缩放到格子图标和名称都看得清（约能看到附近 5–9 格）；
+   *   只有当前行动玩家换人或者棋子真的移动时才重新聚焦，5 秒轮询不会重置视角。
+   * - free：玩家手动拖动/缩放、或者点了"全图"之后，不再自动跟随，直到点"跟随"或"定位我"。
+   */
+  const [mode, setMode] = useState<'follow' | 'free'>('follow')
+  const modeRef = useRef<'follow' | 'free'>('follow')
+  const programmaticRef = useRef(false)
+  const followUid = activeUid ?? currentUid
+  // 最新的玩家位置和跟随对象，供事件回调读取（避免回调随每次轮询重建）
+  const latestRef = useRef({ players, followUid })
+  useEffect(() => {
+    latestRef.current = { players, followUid }
+  }, [players, followUid])
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+
+  const focusOnUid = useCallback((uid: string, animationTime: number) => {
+    const ref = transformRef.current
+    const wrapperEl = wrapperRef.current
+    if (!ref || !wrapperEl || wrapperEl.clientWidth === 0) return
+    const p = latestRef.current.players.find((x) => x.uid === uid)
+    if (!p) return
+    const el = document.getElementById(p.zone && p.zone.kind !== 'ring' ? `mg-token-${uid}` : `mg-cell-${p.position}`)
+    if (!el) return
+    programmaticRef.current = true
+    ref.zoomToElement(el, FOLLOW_SCALE, animationTime)
+    window.setTimeout(() => (programmaticRef.current = false), animationTime + 80)
+  }, [])
+
+  // 容器尺寸从 0 变为可见、或旋转屏幕时：跟随模式重新聚焦，自由模式整图适配
   const lastSizeRef = useRef<string>('')
   useEffect(() => {
     const el = wrapperRef.current
@@ -101,27 +151,46 @@ export function GameBoard({
       const size = `${el.clientWidth}x${el.clientHeight}`
       if (size === lastSizeRef.current || el.clientWidth === 0 || el.clientHeight === 0) return
       lastSizeRef.current = size
-      if (transformRef.current) applyFitToScreen(transformRef.current, 0)
+      if (!transformRef.current) return
+      if (modeRef.current === 'follow') focusOnUid(latestRef.current.followUid, 0)
+      else applyFitToScreen(transformRef.current, 0)
     })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [applyFitToScreen])
+  }, [applyFitToScreen, focusOnUid])
+
+  const active = players.find((p) => p.uid === followUid)
+  const activeKey = active ? `${active.uid}:${!active.zone || active.zone.kind === 'ring' ? `r${active.position}` : JSON.stringify(active.zone)}` : ''
+  // 只在"谁在行动 / 棋子位置"变化时重新聚焦（activeKey 不随轮询变化）
+  useEffect(() => {
+    if (modeRef.current !== 'follow' || !activeKey) return
+    const t = window.setTimeout(() => focusOnUid(latestRef.current.followUid, 400), 60)
+    return () => window.clearTimeout(t)
+  }, [activeKey, focusOnUid])
 
   const handleViewAll = useCallback(() => {
-    // 不用 resetTransform()——它会回到 props 里固定写死的 initialScale，
-    // 在桌面端（视口更宽，真正的"整图适配"缩放比例也更大）会比实际需要
-    // 缩得更小。这里改成每次点击都按当前容器真实尺寸重新计算一次适配
-    // 缩放，和挂载时 onInit 的逻辑保持一致，手机和桌面都准确。
-    if (transformRef.current) applyFitToScreen(transformRef.current, 300)
+    // 不用 resetTransform()——它会回到 props 里固定写死的 initialScale，按容器真实尺寸重新计算整图适配
+    setMode('free')
+    if (transformRef.current) {
+      programmaticRef.current = true
+      applyFitToScreen(transformRef.current, 300)
+      window.setTimeout(() => (programmaticRef.current = false), 380)
+    }
   }, [applyFitToScreen])
 
   const handleLocateMe = useCallback(() => {
-    if (!myPlayer) return
-    const el = document.getElementById(`mg-cell-${myPlayer.position}`)
-    if (el && transformRef.current) {
-      transformRef.current.zoomToElement(el, 1.3, 300)
-    }
-  }, [myPlayer])
+    setMode('free')
+    focusOnUid(currentUid, 300)
+  }, [currentUid, focusOnUid])
+
+  const handleFollow = useCallback(() => {
+    setMode('follow')
+    focusOnUid(latestRef.current.followUid, 300)
+  }, [focusOnUid])
+
+  const userMoved = useCallback(() => {
+    if (!programmaticRef.current) setMode('free')
+  }, [])
 
   return (
     <div className="mg-board-wrap">
@@ -135,18 +204,20 @@ export function GameBoard({
         // 只是触发方式从"根本没做适配"变成"适配值被下限夹住"，所以这里
         // 特意留了远超过安全边际的下限。
         initialScale={0.2}
-        minScale={0.08}
+        minScale={0.06}
         maxScale={2.2}
         centerOnInit
         limitToBounds
         wheel={{ step: 0.15 }}
         doubleClick={{ mode: 'toggle', step: 0.6 }}
         onInit={(ref) => {
-          // 初次挂载时让"整个棋盘概览"这件事真正发生——用 fitToBounds 的等价
-          // 做法：把缩放设到刚好能让 CANVAS_SIZE×CANVAS_SIZE 的画布完整塞进
-          // 容器宽高（取较小的一边，保证整个正方形棋盘都能看到，不会裁掉）。
+          // 先整图适配（保证容器尺寸已知时有一个完整画面），随后默认游玩视角聚焦当前行动玩家
           applyFitToScreen(ref, 0)
+          window.setTimeout(() => modeRef.current === 'follow' && focusOnUid(latestRef.current.followUid, 0), 80)
         }}
+        onPanningStart={userMoved}
+        onPinchingStart={userMoved}
+        onWheelStart={userMoved}
         onTransformed={(_ref, state) => {
           setShowDetail(state.scale >= DETAIL_ZOOM_THRESHOLD)
         }}
@@ -156,14 +227,16 @@ export function GameBoard({
             wrapperClass="mg-board-tc-wrapper"
             contentClass="mg-board-tc-content"
           >
+            <div className="mg-board-pad" style={{ padding: CANVAS_PAD }}>
             <div className="mg-board" style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}>
-              <div className="mg-board-center">
+              <div className={`mg-board-center${showCentral ? ' mg-board-center-quadrant' : ''}`}>
                 <div className="mg-board-center-label mg-display">今夜别想下桌</div>
                 <div className="mg-board-tarot">
                   <span className="mg-pill mg-glow-purple">当前世界塔罗</span>
                   <span className="mg-board-tarot-name mg-display">{worldTarotLabel}</span>
                 </div>
               </div>
+              {showCentral && <CentralRegion players={players} currentUid={currentUid} godsOpen={godsOpen} riverGodUid={riverGodUid} />}
               {BOARD_CELLS.map((cell) => {
                 const occupants = playersByCell.get(cell.id) ?? []
                 const isHighlighted = highlightSet.has(cell.id)
@@ -186,7 +259,7 @@ export function GameBoard({
                         {occupants.map((p, idx) => (
                           <span
                             key={p.uid}
-                            className={`mg-token ${COLOR_CLASS[p.color]}${p.uid === currentUid ? ' mg-token-active' : ''}`}
+                            className={`mg-token ${COLOR_CLASS[p.color]}${p.uid === currentUid ? ' mg-token-active' : ''}${p.uid === activeUid ? ' mg-token-turn' : ''}`}
                             style={{ transform: `translate(${idx * 6}px, ${idx * -6}px)` }}
                           />
                         ))}
@@ -195,6 +268,7 @@ export function GameBoard({
                   </button>
                 )
               })}
+            </div>
             </div>
           </TransformComponent>
         </div>
@@ -205,6 +279,12 @@ export function GameBoard({
           <ViewAllIcon />
           <span>全图</span>
         </button>
+        {mode === 'free' && (
+          <button type="button" className="mg-board-ctrl-btn mg-board-ctrl-follow" onClick={handleFollow} aria-label="跟随当前行动玩家">
+            <LocateIcon />
+            <span>跟随</span>
+          </button>
+        )}
         <button type="button" className="mg-board-ctrl-btn" onClick={handleLocateMe} aria-label="定位我的棋子" disabled={!myPlayer}>
           <LocateIcon />
           <span>定位我</span>
@@ -213,6 +293,85 @@ export function GameBoard({
 
       {selectedCell && <CellDetailSheet cell={selectedCell} onClose={() => setSelectedCellId(null)} />}
     </div>
+  )
+}
+
+/**
+ * V1.6：中央神鬼道竖排和两条河道（坐标取自 PPTX，见 shared/game/godsPath.ts）。
+ * 不在外圈的玩家画在这里：神鬼道节点或桥上的进度刻度。
+ */
+function CentralRegion({
+  players,
+  currentUid,
+  godsOpen,
+  riverGodUid,
+}: {
+  players: GamePlayerState[]
+  currentUid: string
+  godsOpen: boolean
+  riverGodUid: string | null
+}) {
+  const offRing = players.filter((p) => p.zone && p.zone.kind !== 'ring')
+  return (
+    <>
+      <div className="mg-river mg-river-L" aria-hidden="true">
+        <span>河道（渡河）</span>
+      </div>
+      <div className="mg-river mg-river-R" aria-hidden="true">
+        <span>河道（渡河）</span>
+      </div>
+      {(['L', 'R'] as const).map((side) => (
+        <div key={side} className={`mg-bridge mg-bridge-${side}`} aria-hidden="true" title="桥：13 格，过桥费 1 金币，桥上每次掷骰喝 2 口">
+          {Array.from({ length: 13 }, (_, i) => (
+            <span key={i} className="mg-bridge-step" />
+          ))}
+        </div>
+      ))}
+      {Array.from({ length: GODS_NODE_COUNT }, (_, node) => {
+        const pos = godsNodePosition(node)
+        const region = godsRegion(node)
+        const here = offRing.filter((p) => p.zone.kind === 'gods' && p.zone.node === node)
+        return (
+          <div
+            key={node}
+            className={`mg-gods-node mg-gods-${region.toLowerCase()}${godsOpen ? '' : ' mg-gods-closed'}`}
+            style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+            title={region === 'FINISH' ? '终点' : region === 'HEAVEN' ? '天堂：每次地图掷骰 +1 金币' : '地狱：每次地图掷骰 −1 金币'}
+          >
+            {node === GODS_FINISH_NODE && <span className="mg-gods-finish-label">终点</span>}
+            {here.map((p, idx) => (
+              <span
+                key={p.uid}
+                id={`mg-token-${p.uid}`}
+                className={`mg-token ${COLOR_CLASS[p.color]}${p.uid === currentUid ? ' mg-token-active' : ''}${p.uid === riverGodUid ? ' mg-token-god' : ''}`}
+                style={{ transform: `translate(${idx * 6}px, ${idx * -6}px)` }}
+              />
+            ))}
+          </div>
+        )
+      })}
+      <span className="mg-gods-region-label" style={{ left: '49.9%', top: '11.2%' }}>
+        天堂 ↓
+      </span>
+      <span className="mg-gods-region-label" style={{ left: '49.9%', top: '92.2%' }}>
+        地狱 ↑
+      </span>
+      {offRing
+        .filter((p) => p.zone.kind === 'bridge')
+        .map((p, idx) => {
+          const z = p.zone as { kind: 'bridge'; side: 'L' | 'R'; step: number }
+          const pos = bridgePosition(z.side, z.step)
+          return (
+            <span
+              key={p.uid}
+              id={`mg-token-${p.uid}`}
+              className={`mg-token mg-bridge-token ${COLOR_CLASS[p.color]}${p.uid === currentUid ? ' mg-token-active' : ''}`}
+              style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: `translate(calc(-50% + ${idx * 8}px), -50%)` }}
+              title={`桥上 ${z.step}/13`}
+            />
+          )
+        })}
+    </>
   )
 }
 

@@ -14,8 +14,8 @@
 import { startCellIdForColor } from './movement'
 import { drawRandomTacticCardId } from '../cards/tacticCards'
 import { drawRandomTarotId } from '../cards/tarotCards'
-import { dealHoleCards } from '../cards/texasCards'
-import { PLACEHOLDER_IDENTITY_CARD } from '../cards/identityCards'
+import { freshTexasDeck } from './texas'
+import { dealAvalonRoles, emptyAvalon } from './avalon'
 import type { GamePlayerState, GameState, LadyRuleset, PlayerColor } from '../types'
 import { EMPTY_LADY_STATUS } from './ladyEvents'
 import type { GameRoomPlayer } from '../../gameRoomTypes'
@@ -51,7 +51,9 @@ export function initGameState(
     throw new Error('无法在没有玩家的房间初始化游戏')
   }
 
-  const holeCardHands = dealHoleCards(ordered.length)
+  // V1.6：底牌从本局唯一的德州牌堆发出，剩余牌堆留给公共牌（不再单独随机发底牌）
+  const texasDeck = freshTexasDeck(rng)
+  const holeCardHands = ordered.map(() => [texasDeck.shift()!, texasDeck.shift()!])
   const players: Record<string, GamePlayerState> = {}
 
   ordered.forEach((p, idx) => {
@@ -67,12 +69,20 @@ export function initGameState(
       coins: INITIAL_COINS,
       properties: [],
       tacticHand: [drawRandomTacticCardId(rng)],
-      identityCardId: PLACEHOLDER_IDENTITY_CARD.id,
+      identityCardId: '',
       texasHoleCards: [hole0, hole1],
+      mortgaged: [],
+      skipNextRoll: false,
+      laps: 0,
+      zone: { kind: 'ring' },
+      reachedFinish: false,
     }
   })
 
   const turnOrder = ordered.map((p) => p.uid)
+  const roles = dealAvalonRoles(turnOrder, rng)
+  // 身份牌 = 阿瓦隆阵营（V1.6 补充 Q11）。好友聚会信任模式：共享文档可读，界面只给本人看
+  for (const uid of turnOrder) players[uid]!.identityCardId = `avalon-${roles[uid]}`
   const firstPlayer = turnOrder[0]
   if (!firstPlayer) throw new Error('无法确定首位行动玩家，不应该发生')
 
@@ -83,6 +93,7 @@ export function initGameState(
   )
 
   const base: GameState = {
+    rulesVersion: 2,
     startedAt: now,
     turnOrder,
     currentPlayerIndex: 0,
@@ -100,6 +111,7 @@ export function initGameState(
       playersWhoPlayedTacticThisTurn: [],
       tarotNotes: [],
       activeTacticUsed: false,
+      rollSkipped: false,
     },
     pendingDrinkAcks: [],
     recentLadyCards: [],
@@ -116,6 +128,27 @@ export function initGameState(
     ladyStatus: EMPTY_LADY_STATUS,
     kingTask: null,
     kingTaskHistory: [],
+    tacticStack: null,
+    lastTacticResult: null,
+    processedIncidentIds: [],
+    texas: {
+      cycle: 1,
+      stage: 'PREFLOP',
+      deck: texasDeck,
+      community: [],
+      pot: 0,
+      carryPot: 0,
+      folded: [],
+      betting: null,
+      bluffUsed: [],
+      lastShowdown: null,
+      casinoCount: 0,
+    },
+    dream: null,
+    avalon: emptyAvalon(roles),
+    godsPathOpen: false,
+    endgame: null,
+    usedPromptIds: [],
     history,
     finished: false,
   }

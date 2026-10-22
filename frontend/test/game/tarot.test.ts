@@ -110,14 +110,14 @@ describe('II 女祭司 / XII 倒吊人 / III 皇后 — truth or dare', () => {
 
   it('High Priestess forces truth and pays 1 coin on completion', () => {
     let s = atTruthOrDare(TAROT_ID.HIGH_PRIESTESS)
-    expect(s.turn.pendingDecision).toEqual({ kind: 'TRUTH_OR_DARE', choice: 'TRUTH' })
+    expect(s.turn.pendingDecision).toMatchObject({ kind: 'TRUTH_OR_DARE', choice: 'TRUTH' })
     const coins = s.players.u1!.coins
     s = applyTruthOrDareResult(s, 'u1', true, NOW)
     expect(s.players.u1!.coins).toBe(coins + 1)
   })
   it('Hanged Man forces dare and pays 1 coin on completion', () => {
     let s = atTruthOrDare(TAROT_ID.HANGED_MAN)
-    expect(s.turn.pendingDecision).toEqual({ kind: 'TRUTH_OR_DARE', choice: 'DARE' })
+    expect(s.turn.pendingDecision).toMatchObject({ kind: 'TRUTH_OR_DARE', choice: 'DARE' })
     const coins = s.players.u1!.coins
     s = applyTruthOrDareResult(s, 'u1', true, NOW)
     expect(s.players.u1!.coins).toBe(coins + 1)
@@ -129,7 +129,7 @@ describe('II 女祭司 / XII 倒吊人 / III 皇后 — truth or dare', () => {
   })
   it('Empress pays 1 coin for either choice', () => {
     let s = atTruthOrDare(TAROT_ID.EMPRESS)
-    expect(s.turn.pendingDecision).toEqual({ kind: 'TRUTH_OR_DARE', choice: null })
+    expect(s.turn.pendingDecision).toMatchObject({ kind: 'TRUTH_OR_DARE', choice: null })
     s = applyTruthOrDareChoice(s, 'u1', 'DARE', NOW)
     const coins = s.players.u1!.coins
     expect(applyTruthOrDareResult(s, 'u1', true, NOW).players.u1!.coins).toBe(coins + 1)
@@ -319,11 +319,11 @@ describe('XIII 死神 Death', () => {
 })
 
 describe('XIV 节制 Temperance', () => {
-  it('blocks "water instead" and peach', () => {
+  it('blocks peach (Q5: a game-mechanic exemption) but still allows water instead and skip', () => {
     let s = game(TAROT_ID.TEMPERANCE)
     s = withPlayer(s, 'u1', { tacticHand: ['tactic-tao'] })
     s = { ...s, pendingDrinkAcks: [{ id: 'a', targetUid: 'u2', amount: 1, reason: 'x', createdAt: 1 }] }
-    expect(() => applyResolveDrinkAck(s, 'u2', HOST, 'a', 'WATER', NOW)).toThrow(GameActionError)
+    expect(applyResolveDrinkAck(s, 'u2', HOST, 'a', 'WATER', NOW).pendingDrinkAcks).toHaveLength(0)
     expect(() => applyUsePeach(s, 'u1', 'a', NOW)).toThrow(GameActionError)
     expect(applyResolveDrinkAck(s, 'u2', HOST, 'a', 'DONE', NOW).pendingDrinkAcks).toHaveLength(0)
   })
@@ -493,7 +493,11 @@ describe('V 教皇 The Hierophant + global ban', () => {
   })
   it('wrong catch fines the catcher 1 coin; only the host can record it', async () => {
     const { applyBanCatch } = await import('../../../shared/game/engine/tarotActions')
-    expect(applyBanCatch(game(TAROT_ID.STAR), HOST, HOST, 'u2', 'u3', false, NOW).players.u2!.coins).toBe(4)
+    // V1.6：罚款先进入待处理（可以吹牛），支付后才扣
+    const fined = applyBanCatch(game(TAROT_ID.STAR), HOST, HOST, 'u2', 'u3', false, NOW)
+    expect(fined.players.u2!.coins).toBe(5)
+    const ack = fined.pendingDrinkAcks.find((a) => a.coinPenalty)!
+    expect(applyResolveDrinkAck(fined, 'u2', HOST, ack.id, 'PAY', NOW).players.u2!.coins).toBe(4)
     expect(() => applyBanCatch(game(TAROT_ID.STAR), 'u2', HOST, 'u2', 'u3', true, NOW)).toThrow(GameActionError)
   })
 })

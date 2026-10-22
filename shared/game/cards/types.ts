@@ -22,7 +22,7 @@ export interface LadyCardDef {
   ruleStatus: CardRuleStatus
   /** 德国心脏病计数：A/6/J=1；2/7/Q=2；3/8/K=3；4/9=4；5/10=5（10 没有心脏病映射，规则书未提供花色，这里按点数本身降级处理，见文件尾注释） */
   heartAttackCount: number
-  /** 未确认牌的候选方案（Phase D.2）：只在"候选规则预览"房间里结算，正式对局只用于查阅 */
+  /** V1.5 原稿没有牌义的牌：V1.6 数字版补充方案（V1.6 房间自动结算；V1.5 旧房间只供查阅） */
   candidate?: {
     name: string
     rule: string

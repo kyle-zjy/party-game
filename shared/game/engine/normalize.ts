@@ -6,6 +6,8 @@ import type { DiceRollRecord, GameState, PendingDecision, PendingDrinkAck, Pendi
 import { pushDrinkAck } from './stateHelpers'
 import { buildLadyDeck, parseLadyCardId, seededRng, shuffle } from '../cards/ladyDeck'
 import { EMPTY_LADY_STATUS } from './ladyEvents'
+import { legacyTexasState } from './texas'
+import { emptyAvalon } from './avalon'
 
 type Loose<T> = { [K in keyof T]?: T[K] }
 type LegacyDecision = PendingDecision | { kind: 'DRINK_ACK'; amount: number; reason: string } | { kind: 'TRUTH_OR_DARE' }
@@ -37,8 +39,34 @@ export function normalizeGameState(raw: GameState): GameState {
   const hasDeck = Array.isArray(g.ladyDeck)
   const legacyWindow = (g.recentLadyCards ?? []).some((id) => parseLadyCardId(id).suit === null)
 
+  const players: GameState['players'] = {}
+  for (const [uid, p] of Object.entries(g.players ?? {})) {
+    const lp = p as GameState['players'][string] & Loose<GameState['players'][string]>
+    players[uid] = {
+      ...lp,
+      mortgaged: lp.mortgaged ?? [],
+      skipNextRoll: lp.skipNextRoll ?? false,
+      laps: lp.laps ?? 0,
+      zone: lp.zone ?? { kind: 'ring' },
+      reachedFinish: lp.reachedFinish ?? false,
+    }
+  }
+
   return {
     ...g,
+    // Phase D.3 之前开局的房间按 V1.5 规则继续，不被 V1.6 新规则改变
+    rulesVersion: g.rulesVersion ?? 1,
+    players,
+    tacticStack: g.tacticStack ?? null,
+    lastTacticResult: g.lastTacticResult ?? null,
+    processedIncidentIds: g.processedIncidentIds ?? [],
+    // 旧房间没有德州牌堆：用开局时间作种子，从未发出的牌里补出牌堆（所有客户端一致）。旧房间不会使用这些新模块
+    texas: g.texas ?? legacyTexasState(Object.values(players), seededRng((g.startedAt ?? 0) + 1)),
+    dream: g.dream ?? null,
+    avalon: g.avalon ?? emptyAvalon({}),
+    godsPathOpen: g.godsPathOpen ?? false,
+    endgame: g.endgame ?? null,
+    usedPromptIds: g.usedPromptIds ?? [],
     ladyDeck: hasDeck ? g.ladyDeck : shuffle(buildLadyDeck(), seededRng(g.startedAt ?? 0)),
     ladyDiscard: g.ladyDiscard ?? [],
     recentLadyCards: legacyWindow ? [] : (g.recentLadyCards ?? []),
@@ -61,6 +89,7 @@ export function normalizeGameState(raw: GameState): GameState {
       playersWhoPlayedTacticThisTurn: turn.playersWhoPlayedTacticThisTurn ?? [],
       tarotNotes: turn.tarotNotes ?? [],
       activeTacticUsed: turn.activeTacticUsed ?? false,
+      rollSkipped: turn.rollSkipped ?? false,
     },
   }
 }

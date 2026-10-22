@@ -28,20 +28,22 @@ export type PlayerColor = 'R' | 'G' | 'B' | 'Y'
  */
 export type TurnPhase = 'ROLLING' | 'LANDING' | 'LADY_CARD' | 'TACTIC'
 
-/** 当前回合需要"当前玩家"（HOST_RULING / NATURAL_SIX_CHAIN / TAROT_JUSTICE 例外，见下）明确做出选择才能继续的事情 */
+/** 当前回合需要"当前玩家"（HOST_RULING / TAROT_JUSTICE 例外，见下）明确做出选择才能继续的事情 */
 export type PendingDecision =
   | { kind: 'BUY_PROPERTY'; cellId: number; propertyName: string; price: number }
   | { kind: 'CHOOSE_DRINK_TARGET'; amount: number; reason: string }
   /** 两步：先选真心话/大冒险（choice 为 null 时），再确认"完成/拒绝" */
-  | { kind: 'TRUTH_OR_DARE'; choice: 'TRUTH' | 'DARE' | null }
+  | { kind: 'TRUTH_OR_DARE'; choice: 'TRUTH' | 'DARE' | null; promptId?: string | null }
   /** 恋人塔罗：翻牌者指定两名玩家绑定 */
   | { kind: 'CHOOSE_LOVERS' }
   /** 正义塔罗：线下剪刀石头布后，由房主录入大众赢家和大众输家 */
   | { kind: 'TAROT_JUSTICE' }
+  /** V1.6：外圈移动到河边，选择过桥或渡河（没有河神时只能过桥） */
+  | { kind: 'RIVER_CROSS'; side: 'L' | 'R'; dir: 1 | -1; bankCell: number; farCell: number }
+  /** V1.6：停在神鬼道入口格，选择是否进入 */
+  | { kind: 'ENTER_GODS'; entranceNode: 0 | 33 }
   /** 规则书未写明具体结算方式的格子（停骰一次/发车任务/德州+1/下家禁骰等）：只能由房主现场裁定、点击"已处理" */
   | { kind: 'HOST_RULING'; description: string }
-  /** 额外掷骰（自然6触发）本身又摇出自然6时是否继续连锁——规则书明确标注"待确认"，只能由房主裁定，不自动连锁 */
-  | { kind: 'NATURAL_SIX_CHAIN' }
 
 /**
  * 非阻塞的"待喝酒确认"队列——目标是当前玩家以外的人（上家/下家/被指定者/
@@ -63,10 +65,18 @@ export interface PendingDrinkAck {
   transferredFromUid?: string
   /** 小姐牌 A：持券人已发出替喝请求，等待被指定的人接受或拒绝 */
   substituteOffer?: { fromUid: string; toUid: string }
+  /** 骗子酒馆：被罚者正在吹牛 */
+  bluff?: BluffState
+  /**
+   * V1.6：待处理的 1 金币惩罚（目前只有"禁令错误指认罚 1 金币"）。有值时这条记录不是喝酒提醒：
+   * 金币在确认支付时才扣，期间可以吹牛免除。amount 为 0。
+   */
+  coinPenalty?: number
 }
 
 /** DEVIL：恶魔塔罗下被判 1 口时，改为付 1 金币并指定另一人喝 2 口 */
-export type DrinkAckChoice = 'DONE' | 'WATER' | 'SKIP' | 'DEVIL'
+/** PAY：支付待处理的金币惩罚（只用于 coinPenalty 记录） */
+export type DrinkAckChoice = 'DONE' | 'WATER' | 'SKIP' | 'DEVIL' | 'PAY'
 
 /** 玩家在游戏内的状态（和大厅阶段的昵称/座位信息分开，见 GameRoomPlayer） */
 export interface GamePlayerState {
@@ -83,7 +93,28 @@ export interface GamePlayerState {
   identityCardId: string
   /** 开局 2 张德州底牌，本轮只做展示，不接入德州扑克逻辑 */
   texasHoleCards: [string, string]
+  /** V1.6 补充 Q14：已抵押的地产（仍归本人所有，抵押期间不收租、不计入同色加成） */
+  mortgaged: string[]
+  /** V1.6 补充 Q14：下一次自己的回合跳过地图移动掷骰（停骰一次 / 下家禁骰），最多保留一次 */
+  skipNextRoll: boolean
+  /** 外圈完整跑过几圈（经过自己的起点计 1 圈），用于开启神鬼道 */
+  laps: number
+  /** 当前所在区域：外圈用 position；神鬼道 / 桥上用 zone 里的下标 */
+  zone: PlayerZone
+  /** 是否已经抵达终点（得 10 分，每人最多一次） */
+  reachedFinish: boolean
 }
+
+/**
+ * 玩家所在区域（V1.6 补充，依据 PPTX 中央区域的真实形状）：
+ * - ring：外圈 74 格，位置在 position。
+ * - gods：神鬼道竖排，node 0–15 天堂（0 是上端入口格），16 终点，17–33 地狱（33 是下端入口格），dir 是前进方向。
+ * - bridge：河道上的桥，side 为左/右两条河，step 0–12（共 13 格），dir 表示过河方向。
+ */
+export type PlayerZone =
+  | { kind: 'ring' }
+  | { kind: 'gods'; node: number; dir: 1 | -1 }
+  | { kind: 'bridge'; side: 'L' | 'R'; step: number; dir: 1 | -1 }
 
 /** 一次移动的来源说明，用于历史记录和"自然 6"判断 */
 export interface DiceRollRecord {
@@ -254,6 +285,49 @@ export interface TurnState {
   tarotNotes: string[]
   /** 规则书"可选：打 1 张三国杀手牌；响应牌不限"——本回合是否已经主动出过牌 */
   activeTacticUsed: boolean
+  /** V1.6 补充 Q14：本回合因停骰/禁骰跳过了地图移动掷骰 */
+  rollSkipped: boolean
+}
+
+// ---------------------------------------------------------------------------
+// 战术牌响应栈（V1.6 补充）
+// ---------------------------------------------------------------------------
+
+export type TacticOriginKind = 'tactic-sha' | 'tactic-shunshou' | 'tactic-guohe'
+
+/** 栈里的一张牌。每张牌否定它下面的那一张；从栈顶往下判断谁真正生效 */
+export interface TacticStackEntry {
+  entryId: string
+  cardId: string
+  playerUid: string
+}
+
+export interface TacticStack {
+  stackId: string
+  originKind: TacticOriginKind
+  /** 发起主动牌的玩家与目标 */
+  sourceUid: string
+  targetUid: string
+  /** entries[0] 是原始主动牌，之后是闪/无懈可击，最后一个是栈顶 */
+  entries: TacticStackEntry[]
+  /** 针对当前栈顶，还需要表态（出牌或放弃）的玩家 */
+  awaiting: string[]
+  /** 已经放弃（或被房主记录为放弃）的玩家 */
+  passed: string[]
+  createdAt: number
+}
+
+/** 最近一次结算完的响应栈，所有人看到同一个结果 */
+export interface TacticStackResult {
+  stackId: string
+  originKind: TacticOriginKind
+  sourceUid: string
+  targetUid: string
+  entries: TacticStackEntry[]
+  /** 原始主动牌最终是否生效 */
+  effective: boolean
+  summary: string
+  at: number
 }
 
 /** 当前塔罗附带的状态；新塔罗生效时整体重置，旧塔罗的持续效果随之失效 */
@@ -279,7 +353,132 @@ export interface TarotChangeEvent {
   summary: TarotEffectLine[]
 }
 
+// ---------------------------------------------------------------------------
+// 德州扑克 / 骗子酒馆 / 梦幻拖拉机（V1.6 补充）
+// ---------------------------------------------------------------------------
+
+export type TexasStage = 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER' | 'DONE'
+
+export interface TexasBetting {
+  stage: 'FLOP' | 'TURN' | 'RIVER'
+  /** 本阶段已经下注 1 金币的人（第一个下注的人之后，其他人只能跟注或弃牌） */
+  betUid: string | null
+  contributed: string[]
+  /** 还需要表态的人，按行动顺序 */
+  awaiting: string[]
+}
+
+export interface TexasShowdownResult {
+  cycle: number
+  community: string[]
+  hands: { uid: string; holeCards: [string, string]; handName: string; best: string[] }[]
+  winners: string[]
+  pot: number
+  share: number
+  returnedToBank: number
+  reason: 'SHOWDOWN' | 'LAST_STANDING'
+  at: number
+}
+
+export interface TexasState {
+  /** 第几个德州周期（从 1 开始），每个周期重新洗牌发底牌 */
+  cycle: number
+  stage: TexasStage
+  /** 本周期剩余牌堆（底牌、公共牌都从这里发） */
+  deck: string[]
+  community: string[]
+  pot: number
+  /** 周期结束后、下一周期开始前投入的底池（德州+1 / 德扑+1），开新周期时并入 */
+  carryPot: number
+  folded: string[]
+  betting: TexasBetting | null
+  /** 本周期已经吹过牛的人 */
+  bluffUsed: string[]
+  lastShowdown: TexasShowdownResult | null
+  /** 本局已经触发过几次 CASINO */
+  casinoCount: number
+}
+
+export interface BluffState {
+  claimerUid: string
+  /** 声明的底牌，如 "SA" */
+  claim: string
+  /** 其他玩家里还没表态的人 */
+  awaiting: string[]
+}
+
+export interface DreamChallenge {
+  eventId: string
+  initiatorUid: string
+  /** 本事件涉及、可以被挑战的玩家 */
+  candidates: string[]
+  targetUid: string | null
+  step: 'OPEN' | 'AWAIT_ACCEPT' | 'DECLARE' | 'DONE'
+  fantasy: Record<string, string>
+  result: { winners: string[]; hands: { uid: string; cards: string[]; handName: string }[]; summary: string } | null
+}
+
+// ---------------------------------------------------------------------------
+// 阿瓦隆（V1.6 补充 Q11）
+// ---------------------------------------------------------------------------
+
+export type AvalonSide = 'GOOD' | 'EVIL'
+
+export interface AvalonMission {
+  missionId: string
+  round: number
+  leaderUid: string
+  size: number
+  passengers: string[]
+  step: 'PICK' | 'VOTE'
+  /** 好友聚会信任模式：投票存在共享文档里，普通界面不显示别人的选择；揭示后清空 */
+  votes: Record<string, 'SUCCESS' | 'FAIL'>
+}
+
+export interface AvalonState {
+  roles: Record<string, AvalonSide>
+  round: number
+  successes: number
+  fails: number
+  results: { round: number; success: boolean; size: number }[]
+  active: AvalonMission | null
+  winner: AvalonSide | null
+}
+
+// ---------------------------------------------------------------------------
+// 终局（V1.6 补充）
+// ---------------------------------------------------------------------------
+
+export interface FinalScore {
+  uid: string
+  finishBonus: number
+  coins: number
+  properties: number
+  propertyPoints: number
+  fullSets: number
+  setPoints: number
+  total: number
+  rank: number
+}
+
+export interface EndgameState {
+  triggeredByUid: string
+  triggeredAt: number
+  /** MAP_TURN_ENDING：触发者还在完成当前回合；AVALON：只进行阿瓦隆收尾；DONE：已经计分 */
+  phase: 'MAP_TURN_ENDING' | 'AVALON' | 'DONE'
+  scores: FinalScore[] | null
+  winners: string[]
+  notes: string[]
+}
+
+/**
+ * 规则版本：1 = V1.5（Phase D.3 之前开局的旧房间，读取时补为 1），2 = V1.6 数字版。
+ * 新规则（小姐牌全部启用、停骰/禁骰、德州底池……）只在 2 的房间里生效，不改变进行中的旧对局。
+ */
+export type RulesVersion = 1 | 2
+
 export interface GameState {
+  rulesVersion: RulesVersion
   /** 游戏初始化时间戳，仅用于展示/调试 */
   startedAt: number
   /** 固定的玩家顺序（等于开局时 GameRoomPlayer 按座位排序后的 uid 列表） */
@@ -313,6 +512,19 @@ export interface GameState {
   kingTask: KingTask | null
   /** K：已经处理过的任务（最近 10 条） */
   kingTaskHistory: KingTask[]
+  /** 进行中的战术牌响应栈（同一时间最多一个） */
+  tacticStack: TacticStack | null
+  lastTacticResult: TacticStackResult | null
+  /** 房主录入类事件（禁令、神经病）已处理的事件 id，防止同一事件重复提交 */
+  processedIncidentIds: string[]
+  texas: TexasState
+  dream: DreamChallenge | null
+  avalon: AvalonState
+  /** 神鬼道是否已经开启（第一位玩家跑完外圈一圈后） */
+  godsPathOpen: boolean
+  endgame: EndgameState | null
+  /** V1.6：本局已经抽过的真心话/大冒险题 id（避免重复） */
+  usedPromptIds: string[]
   history: GameHistoryEntry[]
   /** 游戏是否已经结束（本轮终点/结算逻辑未实现，恒为 false，字段先占位） */
   finished: boolean

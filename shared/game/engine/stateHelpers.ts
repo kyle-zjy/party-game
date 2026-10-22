@@ -36,6 +36,14 @@ export function pushDrinkAck(
   ]
 }
 
+/** V1.6：待处理的金币惩罚（和喝酒提醒共用队列，本人确认支付时才扣款） */
+export function pushCoinPenalty(acks: PendingDrinkAck[], targetUid: string, coins: number, reason: string, now: number): PendingDrinkAck[] {
+  return [
+    ...acks,
+    { id: `coin-${now}-${Math.random().toString(36).slice(2, 8)}`, targetUid, amount: 0, amountText: `${coins} 金币`, coinPenalty: coins, reason, createdAt: now },
+  ]
+}
+
 /** 按固定玩家顺序取相邻玩家：direction 1 为下家，-1 为上家 */
 export function neighborUid(state: GameState, uid: string, direction: 1 | -1): string {
   const idx = state.turnOrder.indexOf(uid)

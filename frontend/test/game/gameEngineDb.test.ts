@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GameRoom, GameRoomPlayer } from '../../../shared/gameRoomTypes'
 import type { GameState } from '../../../shared/game/types'
+import { settleEverything } from './settleAll'
 
 /**
  * 伪造一个最小化的 CloudBase 文档数据库，只实现 gameEngineDb.ts /
@@ -141,6 +142,15 @@ async function settleDecisions(state: GameRoom, uid: string): Promise<GameRoom> 
   if (ev && ev.status === 'ACTIVE' && ev.rank === 'K') {
     if (ev.step === 'KING_PERFORM') state = await db.kingTaskResolveAction(state._id, 'u1', ev.eventId, true)
     state = await db.kingWriteTaskAction(state._id, ev.actingUid, ev.eventId, '模仿一种动物叫三声')
+  }
+  // 其余 V1.6 事件（其他小姐牌、阿瓦隆、响应栈、河边选择）：用纯引擎动作推进后写回假数据库。
+  // 这些动作各自的数据库路径在专门的测试里覆盖，这里只为了让随机流程测试能继续往下走。
+  const stored = fakeDb._store.get(state._id)! as unknown as { game: GameState; version: number }
+  const settled = settleEverything(stored.game, uid, 'u1')
+  if (settled !== stored.game) {
+    stored.game = JSON.parse(JSON.stringify(settled)) as GameState
+    stored.version += 1
+    state = { ...state, game: stored.game, version: stored.version }
   }
   return state
 }
@@ -670,10 +680,12 @@ describe('gameEngineDb: lady card events through game_rooms (Phase D.2)', () => 
     expect(final!.version).toBe(room.version)
   })
 
-  it('official room: candidate cards keep the host ruling even when the client asks for preview in production', async () => {
+  it('legacy V1.5 room already in progress: candidate cards keep the host ruling (new rules do not leak in)', async () => {
     const { started } = await startedRoom('official')
     expect(started.game!.ladyRuleset).toBe('official')
     const db = await import('../../src/lib/gameEngineDb')
+    // 模拟 Phase D.3 之前开局、仍在进行的线上房间：文档里没有 rulesVersion
+    delete (fakeDb._store.get(started._id)! as unknown as { game: Record<string, unknown> }).game.rulesVersion
     stageReveal(started._id, 'u1', 'S-6')
     const room = await db.revealLadyCardAction(started._id, 'u1')
     expect(room.game!.ladyEvent).toBeNull()
@@ -732,5 +744,115 @@ describe('gameEngineDb: lady card events through game_rooms (Phase D.2)', () => 
     const raw = fakeDb._store.get(started._id)! as unknown as { game: GameState }
     expect(raw.game.ladyStatus.kingUid).toBe('u1')
     expect(raw.game.ladyRuleset).toBe('official')
+  })
+})
+
+describe('gameEngineDb: V1.6 modules through game_rooms', () => {
+  beforeEach(() => {
+    fakeDb._store.clear()
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  async function started3() {
+    const db = await import('../../src/lib/gameEngineDb')
+    const room = await seedWaitingRoom([
+      makeRoomPlayer({ uid: 'u1', seat: 0, isHost: true }),
+      makeRoomPlayer({ uid: 'u2', seat: 1 }),
+      makeRoomPlayer({ uid: 'u3', seat: 2 }),
+    ])
+    const started = await settleDecisions(await db.startGameWithEngine(room._id, 'u1'), 'u1')
+    return { db, started }
+  }
+  function stored(roomId: string) {
+    return fakeDb._store.get(roomId)! as unknown as { game: GameState; version: number }
+  }
+
+  it('new rooms are written as V1.6 with Texas deck, Avalon roles and identity cards persisted', async () => {
+    const { started } = await started3()
+    const g = stored(started._id).game
+    expect(g.rulesVersion).toBe(2)
+    expect(Object.keys(g.avalon.roles).sort()).toEqual(['u1', 'u2', 'u3'])
+    expect(g.texas.deck.length + 6).toBe(52)
+  })
+
+  it('landing on 德州+1 opens a CASINO; a version-conflict retry replays the identical Flop (no reshuffle)', async () => {
+    const { db, started } = await started3()
+    const g = stored(started._id).game
+    g.players.u1!.position = 7 // 第 9 格是"德州+1"，掷 2
+    g.turn = { ...g.turn, phase: 'LANDING', lastRoll: { natural: 2, effective: 2, isNaturalSix: false, grantsExtraRoll: false, tarotNote: null }, landingResolved: false, pendingDecision: null }
+    const flopBefore = g.texas.deck.slice(0, 3)
+
+    // 第一次写入前插入一次并发修改 → 重试
+    const doc = fakeDb._store.get(started._id)!
+    let interfered = false
+    const original = fakeDb.collection.bind(fakeDb)
+    vi.spyOn(fakeDb, 'collection').mockImplementation((name: string) => {
+      const real = original(name)
+      return {
+        ...real,
+        where: (query: Record<string, unknown>) => {
+          if (!interfered && 'version' in query) {
+            interfered = true
+            doc.version = (doc.version as number) + 1
+          }
+          return real.where(query)
+        },
+      }
+    })
+    const room = await db.resolveLandingAction(started._id, 'u1')
+    expect(interfered).toBe(true)
+    expect(room.game!.texas.stage).toBe('FLOP')
+    expect(room.game!.texas.community).toEqual(flopBefore)
+    expect(room.game!.texas.pot).toBe(1)
+  })
+
+  it('tactic response stack persists between players: 杀 → target plays 闪 from another browser', async () => {
+    const { db, started } = await started3()
+    const g = stored(started._id).game
+    g.turn = { ...g.turn, phase: 'TACTIC', pendingDecision: null, currentPlayerUid: 'u1' }
+    g.currentPlayerIndex = 0
+    g.players.u1!.tacticHand = ['tactic-sha']
+    g.players.u2!.tacticHand = ['tactic-shan']
+    g.players.u3!.tacticHand = []
+    let room = await db.playTacticCardAction(started._id, 'u1', 'tactic-sha', 'u2')
+    const stackId = room.game!.tacticStack!.stackId
+    expect(room.game!.tacticStack!.awaiting).toEqual(['u2'])
+    await expect(db.endTurnAction(started._id, 'u1')).rejects.toThrow()
+    room = await db.respondTacticAction(started._id, 'u2', stackId, 'tactic-shan')
+    expect(room.game!.tacticStack).toBeNull()
+    expect(room.game!.lastTacticResult!.effective).toBe(false)
+    await expect(db.respondTacticAction(started._id, 'u2', stackId, 'tactic-shan')).rejects.toThrow()
+  })
+
+  it('Avalon mission: picks and secret votes are persisted; reveal clears votes; non-passengers are rejected', async () => {
+    const { db, started } = await started3()
+    const g = stored(started._id).game
+    const s = (await import('../../../shared/game/engine/avalon')).startAvalonMission(g, 'u1', 1)
+    stored(started._id).game = JSON.parse(JSON.stringify(s)) as GameState
+    const m = s.avalon.active!
+    const passengers = ['u1', 'u2']
+    await db.avalonPickAction(started._id, 'u1', m.missionId, passengers)
+    await expect(db.avalonVoteAction(started._id, 'u3', m.missionId, 'SUCCESS')).rejects.toThrow()
+    await db.avalonVoteAction(started._id, 'u1', m.missionId, 'SUCCESS')
+    const room = await db.avalonVoteAction(started._id, 'u2', m.missionId, 'SUCCESS')
+    expect(room.game!.avalon.active).toBeNull()
+    expect(room.game!.avalon.results).toHaveLength(1)
+  })
+
+  it('a finished game is frozen: every action is rejected', async () => {
+    const { db, started } = await started3()
+    stored(started._id).game.finished = true
+    await expect(db.rollDiceAction(started._id, 'u1')).rejects.toThrow(/已经结束/)
+    await expect(db.mortgageAction(started._id, 'u1', '命宫', true)).rejects.toThrow()
+  })
+
+  it('ban catch with the same incident id from a double click settles once', async () => {
+    const { db, started } = await started3()
+    await db.banCatchAction(started._id, 'u1', 'u2', 'u3', true, 'inc-x')
+    await expect(db.banCatchAction(started._id, 'u1', 'u2', 'u3', true, 'inc-x')).rejects.toThrow()
+    const g = stored(started._id).game
+    expect(g.pendingDrinkAcks.filter((a) => a.targetUid === 'u3')).toHaveLength(1)
   })
 })

@@ -27,6 +27,8 @@ import {
   applyResolveLanding,
   applyRevealLadyCard,
   applyRollDice,
+  applyRedrawTruthOrDare,
+  applySkipRollTurn,
   applySkipTactic,
   applyTruthOrDareChoice,
   applyTruthOrDareResult,
@@ -50,7 +52,22 @@ import {
   applySetAway,
   finalizeGameAction,
 } from '../../../shared/game/engine/ladyEvents'
+import { applyMortgage, applyPassTactic, applyRespondTactic } from '../../../shared/game/engine/tacticStack'
+import {
+  applyDreamChallenge,
+  applyDreamDeclare,
+  applyDreamRespond,
+  applyRespondBluff,
+  applyStartBluff,
+  applyTexasBet,
+  closeBetting,
+  type TexasBetAction,
+} from '../../../shared/game/engine/texas'
+import { applyAvalonHostCancel, applyAvalonPick, applyAvalonVote } from '../../../shared/game/engine/avalon'
+import { applyEnterGods, applyRiverChoice } from '../../../shared/game/engine/zones'
+import { assertNotFinished, continueEndgame } from '../../../shared/game/engine/endgame'
 import { normalizeRoom } from './normalizeRoom'
+import { seededRng } from '../../../shared/game/cards/ladyDeck'
 import { rollD6 } from '../../../shared/game/engine/dice'
 import type { DrinkAckChoice, GameState, LadyRank, LadyRuleset } from '../../../shared/game/types'
 
@@ -63,6 +80,15 @@ function db() {
 
 function now(): number {
   return Date.now()
+}
+
+/**
+ * 同一个动作的随机结果只能产生一次：在乐观锁重试循环外生成一个种子，每次重试都用同一个种子
+ * 重新创建随机数序列。版本冲突重试时抽到的塔罗、补抽的手牌、德州洗牌顺序都和第一次完全相同，
+ * 不会变成"重抽"。
+ */
+function actionSeed(): number {
+  return Math.floor(Math.random() * 2 ** 31)
 }
 
 /**
@@ -189,6 +215,8 @@ async function runGameAction(
     let nextGame: GameState
     try {
       const at = now()
+      // 游戏结束后结果固定，任何动作都不再修改
+      assertNotFinished(room.game)
       // 统一收尾：小姐牌 2 的陪喝在这里检查一次，所有动作产生的喝酒提醒都覆盖到
       nextGame = finalizeGameAction(room.game, transform(room.game, room), at)
     } catch (error) {
@@ -248,7 +276,9 @@ export async function rollDiceAction(roomId: string, uid: string): Promise<GameR
 }
 
 export async function resolveLandingAction(roomId: string, uid: string): Promise<GameRoom> {
-  return runGameAction(roomId, (game) => applyResolveLanding(game, uid, now()).state)
+  // 落点可能抽塔罗、补抽手牌、触发 CASINO 洗牌：同一个种子，重试结果不变
+  const seed = actionSeed()
+  return runGameAction(roomId, (game) => applyResolveLanding(game, uid, now(), seededRng(seed)).state)
 }
 
 export async function advanceAfterLandingAction(roomId: string, uid: string): Promise<GameRoom> {
@@ -264,7 +294,13 @@ export async function chooseDrinkTargetAction(roomId: string, uid: string, targe
 }
 
 export async function truthOrDareChoiceAction(roomId: string, uid: string, choice: 'TRUTH' | 'DARE'): Promise<GameRoom> {
-  return runGameAction(roomId, (game) => applyTruthOrDareChoice(game, uid, choice, now()))
+  const seed = actionSeed()
+  return runGameAction(roomId, (game) => applyTruthOrDareChoice(game, uid, choice, now(), seededRng(seed)))
+}
+
+export async function redrawTruthOrDareAction(roomId: string, uid: string): Promise<GameRoom> {
+  const seed = actionSeed()
+  return runGameAction(roomId, (game, room) => applyRedrawTruthOrDare(game, uid, hostUidOf(room), now(), seededRng(seed)))
 }
 
 export async function truthOrDareResultAction(roomId: string, uid: string, completed: boolean): Promise<GameRoom> {
@@ -299,7 +335,8 @@ export async function resolveDrinkAckAction(
 }
 
 export async function peachAction(roomId: string, callerUid: string, ackId: string): Promise<GameRoom> {
-  return runGameAction(roomId, (game) => applyUsePeach(game, callerUid, ackId, now()))
+  const seed = actionSeed()
+  return runGameAction(roomId, (game) => applyUsePeach(game, callerUid, ackId, now(), seededRng(seed)))
 }
 
 export async function chooseLoversAction(roomId: string, callerUid: string, uidA: string, uidB: string): Promise<GameRoom> {
@@ -325,13 +362,16 @@ export async function banCatchAction(
   catcherUid: string,
   violatorUid: string,
   correct: boolean,
+  incidentId: string,
 ): Promise<GameRoom> {
-  return runGameAction(roomId, (game, room) => applyBanCatch(game, callerUid, hostUidOf(room), catcherUid, violatorUid, correct, now()))
+  // incidentId 由录入面板打开时生成一次：重复点击、重试都带同一个 id，引擎只结算一次
+  return runGameAction(roomId, (game, room) => applyBanCatch(game, callerUid, hostUidOf(room), catcherUid, violatorUid, correct, now(), incidentId))
 }
 
 export async function revealLadyCardAction(roomId: string, uid: string): Promise<GameRoom> {
   // 从共享牌堆顶抽牌，抽牌结果和窗口变化在同一次乐观锁写入里落库
-  return runGameAction(roomId, (game) => applyRevealLadyCard(game, uid, now()).state)
+  const seed = actionSeed()
+  return runGameAction(roomId, (game) => applyRevealLadyCard(game, uid, now(), seededRng(seed)).state)
 }
 
 export async function playTacticCardAction(
@@ -340,7 +380,10 @@ export async function playTacticCardAction(
   cardInstanceId: string,
   targetUid: string | null,
 ): Promise<GameRoom> {
-  return runGameAction(roomId, (game) => applyPlayTacticCard(game, uid, cardInstanceId, targetUid, now()))
+  // 过河拆桥的随机弃牌、魔术师补抽：在重试循环外决定一次
+  const seed = actionSeed()
+  const randomPick = Math.random()
+  return runGameAction(roomId, (game) => applyPlayTacticCard(game, uid, cardInstanceId, targetUid, now(), seededRng(seed), randomPick))
 }
 
 export async function skipTacticAction(roomId: string, uid: string): Promise<GameRoom> {
@@ -348,7 +391,7 @@ export async function skipTacticAction(roomId: string, uid: string): Promise<Gam
 }
 
 export async function endTurnAction(roomId: string, uid: string): Promise<GameRoom> {
-  return runGameAction(roomId, (game) => applyEndTurn(game, uid, now()))
+  return runGameAction(roomId, (game) => continueEndgame(applyEndTurn(game, uid, now()), now()))
 }
 
 // ---------------------------------------------------------------------------
@@ -402,8 +445,8 @@ export async function setAwayAction(roomId: string, uid: string, targetUid: stri
   return runGameAction(roomId, (game, room) => applySetAway(game, uid, hostUidOf(room), targetUid, away, usePass, now()))
 }
 
-export async function crazyCatchAction(roomId: string, uid: string, violatorUid: string): Promise<GameRoom> {
-  return runGameAction(roomId, (game, room) => applyCrazyCatch(game, uid, hostUidOf(room), violatorUid, now()))
+export async function crazyCatchAction(roomId: string, uid: string, violatorUid: string, incidentId: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game, room) => applyCrazyCatch(game, uid, hostUidOf(room), violatorUid, now(), incidentId))
 }
 
 /** 开发测试入口：把指定点数放到牌堆顶。引擎只允许候选规则预览房间使用，并且只有房主可以调用 */
@@ -412,6 +455,82 @@ export async function devStackLadyDeckAction(roomId: string, uid: string, rank: 
     if (uid !== hostUidOf(room)) throw new GameActionError('INVALID_GAME_ACTION', '只有房主可以使用开发测试入口')
     return applyDevStackLadyDeck(game, rank)
   })
+}
+
+// ---------------------------------------------------------------------------
+// V1.6：停骰、抵押、战术响应、德州/吹牛/梦幻、阿瓦隆、神鬼道与河道、终局
+// ---------------------------------------------------------------------------
+
+export async function skipRollTurnAction(roomId: string, uid: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applySkipRollTurn(game, uid, now()))
+}
+
+export async function mortgageAction(roomId: string, uid: string, propertyName: string, mortgage: boolean): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyMortgage(game, uid, propertyName, mortgage, now()))
+}
+
+export async function respondTacticAction(roomId: string, uid: string, stackId: string, cardId: string): Promise<GameRoom> {
+  const seed = actionSeed()
+  return runGameAction(roomId, (game) => applyRespondTactic(game, uid, stackId, cardId, now(), seededRng(seed)))
+}
+
+export async function passTacticAction(roomId: string, uid: string, stackId: string, forUid: string): Promise<GameRoom> {
+  const randomPick = Math.random()
+  return runGameAction(roomId, (game, room) => applyPassTactic(game, uid, hostUidOf(room), stackId, forUid, now(), randomPick))
+}
+
+export async function texasBetAction(roomId: string, uid: string, action: TexasBetAction): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyTexasBet(game, uid, action, now()))
+}
+
+/** 房主结束本阶段下注：未表态的人按过牌/弃牌处理（有人离线时用） */
+export async function texasCloseBettingAction(roomId: string, uid: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game, room) => {
+    if (uid !== hostUidOf(room)) throw new GameActionError('INVALID_GAME_ACTION', '只有房主可以结束本阶段下注')
+    return closeBetting(game, now(), true)
+  })
+}
+
+export async function startBluffAction(roomId: string, uid: string, ackId: string, claim: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyStartBluff(game, uid, ackId, claim, now()))
+}
+
+export async function respondBluffAction(roomId: string, uid: string, ackId: string, challenge: boolean, closeAll = false): Promise<GameRoom> {
+  return runGameAction(roomId, (game, room) => applyRespondBluff(game, uid, hostUidOf(room), ackId, challenge, now(), closeAll))
+}
+
+export async function dreamChallengeAction(roomId: string, uid: string, eventId: string, targetUid: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyDreamChallenge(game, uid, eventId, targetUid, now()))
+}
+
+export async function dreamRespondAction(roomId: string, uid: string, eventId: string, accept: boolean): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyDreamRespond(game, uid, eventId, accept, now()))
+}
+
+export async function dreamDeclareAction(roomId: string, uid: string, eventId: string, card: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyDreamDeclare(game, uid, eventId, card, now()))
+}
+
+export async function avalonPickAction(roomId: string, uid: string, missionId: string, passengers: string[]): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyAvalonPick(game, uid, missionId, passengers, now()))
+}
+
+export async function avalonVoteAction(roomId: string, uid: string, missionId: string, vote: 'SUCCESS' | 'FAIL'): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => continueEndgame(applyAvalonVote(game, uid, missionId, vote, now()), now()))
+}
+
+export async function avalonCancelAction(roomId: string, uid: string, missionId: string): Promise<GameRoom> {
+  return runGameAction(roomId, (game, room) => continueEndgame(applyAvalonHostCancel(game, uid, hostUidOf(room), missionId, now()), now()))
+}
+
+export async function riverChoiceAction(roomId: string, uid: string, choice: 'BRIDGE' | 'FORD'): Promise<GameRoom> {
+  // 渡河三颗独立骰（玩家、河神、神谕）在重试循环外各掷一次
+  const dice = { player: rollD6(), god: rollD6(), oracle: rollD6() }
+  return runGameAction(roomId, (game) => applyRiverChoice(game, uid, choice, dice, now()))
+}
+
+export async function enterGodsAction(roomId: string, uid: string, enter: boolean): Promise<GameRoom> {
+  return runGameAction(roomId, (game) => applyEnterGods(game, uid, enter, now()))
 }
 
 /** 房主身份属于大厅模型（`GameRoomPlayer.isHost`），不属于 GameState——从房间文档取，不是从游戏状态猜 */

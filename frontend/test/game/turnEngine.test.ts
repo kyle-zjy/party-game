@@ -15,7 +15,7 @@ import {
   GameActionError,
 } from '../../../shared/game/engine/turnEngine'
 import { applyChooseLovers, applyJusticeSwap } from '../../../shared/game/engine/tarotActions'
-import { applyKingTaskResolve, applyKingWriteTask } from '../../../shared/game/engine/ladyEvents'
+import { settleEverything } from './settleAll'
 import type { GameRoomPlayer } from '../../../shared/gameRoomTypes'
 import type { GameState } from '../../../shared/game/types'
 import { getCell, isPropertyCell } from '../../../shared/game/board'
@@ -51,20 +51,19 @@ describe('full turn loop: roll -> land -> lady card -> tactic -> end turn', () =
       const landing = applyResolveLanding(state, expectedUid, 2000)
       state = landing.state
       // Resolve any pending decision generically for this loop test (buy/skip, ack, ruling ack by host, etc.)
-      state = resolvePendingDecisionIfAny(state, expectedUid, order[0]!)
+      state = settleEverything(state, expectedUid, order[0]!)
       state = applyAdvanceAfterLanding(state, expectedUid, 2000)
       if (state.turn.phase === 'ROLLING') {
         // natural six chain — finish the extra roll with a non-six value
         state = applyRollDice(state, expectedUid, 1)
         const landing2 = applyResolveLanding(state, expectedUid, 2000)
         state = landing2.state
-        state = resolvePendingDecisionIfAny(state, expectedUid, order[0]!)
+        state = settleEverything(state, expectedUid, order[0]!)
         state = applyAdvanceAfterLanding(state, expectedUid, 2000)
       }
       expect(state.turn.phase).toBe('LADY_CARD')
       const reveal = applyRevealLadyCard(state, expectedUid, 2000)
-      state = resolvePendingDecisionIfAny(reveal.state, expectedUid, order[0]!)
-      state = finishKingEventIfAny(state, order[0]!)
+      state = settleEverything(reveal.state, expectedUid, order[0]!)
       state = applySkipTactic(state, expectedUid, 2000)
       state = applyEndTurn(state, expectedUid, 2000)
     }
@@ -72,14 +71,6 @@ describe('full turn loop: roll -> land -> lady card -> tactic -> end turn', () =
     expect(state.turn.currentPlayerUid).toBe(order[0])
   })
 })
-
-/** K 国王传承是正式规则：翻到 K 时完成（或跳过）任务并留下新任务，回合才进入战术阶段 */
-function finishKingEventIfAny(state: GameState, hostUid: string): GameState {
-  const ev = state.ladyEvent
-  if (!ev || ev.status !== 'ACTIVE') return state
-  if (ev.step === 'KING_PERFORM') state = applyKingTaskResolve(state, hostUid, hostUid, ev.eventId, true, 2000)
-  return applyKingWriteTask(state, ev.actingUid, hostUid, ev.eventId, '模仿一种动物叫三声', 2000)
-}
 
 function resolvePendingDecisionIfAny(state: GameState, currentUid: string, hostUid: string): GameState {
   const decision = state.turn.pendingDecision
@@ -274,7 +265,7 @@ describe('idempotency: repeated submission of the same action should not double-
       state = applyAdvanceAfterLanding(state, 'u1', 2000)
     }
     const reveal = applyRevealLadyCard(state, 'u1', 2000)
-    state = finishKingEventIfAny(resolvePendingDecisionIfAny(reveal.state, 'u1', 'u1'), 'u1')
+    state = settleEverything(reveal.state, 'u1', 'u1')
     state = applySkipTactic(state, 'u1', 2000)
     state = applyEndTurn(state, 'u1', 2000)
     expect(state.turn.currentPlayerUid).toBe('u2')

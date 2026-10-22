@@ -66,10 +66,12 @@ export function validateKingTaskContent(raw: string): { ok: true; content: strin
 
 /**
  * 规则开关：这张牌在本局是否自动结算。
- * 已确认的牌（K）任何房间都结算；候选牌只在开发环境开局的"候选规则预览"房间结算。
+ * - V1.6 房间（rulesVersion 2）：13 张全部是数字版正式规则。
+ * - V1.5 旧房间：只有 K 自动结算；候选牌只在开发环境的"候选规则预览"房间结算。
  */
-export function isLadyRuleActive(state: Pick<GameState, 'ladyRuleset'>, card: LadyCardDef): boolean {
+export function isLadyRuleActive(state: Pick<GameState, 'ladyRuleset' | 'rulesVersion'>, card: LadyCardDef): boolean {
   if (card.ruleStatus === 'confirmed') return true
+  if (state.rulesVersion === 2) return card.candidate !== undefined
   return state.ladyRuleset === 'candidate-preview' && card.candidate !== undefined
 }
 
@@ -423,7 +425,7 @@ export function applyKingWriteTask(
   const previousSummary = ev.result?.summary
   if (content === null) {
     if (callerUid !== hostUid) throw new GameActionError('INVALID_GAME_ACTION', '只有房主可以跳过留任务')
-    const summary = [previousSummary, '房主跳过了留任务，下一任国王没有任务要执行'].filter(Boolean).join('；')
+    const summary = [previousSummary, '房主取消了留任务：国王传承中断，下一位翻到 K 的人重新成为第一任国王'].filter(Boolean).join('；')
     return finishEvent(state, done(ev, [], summary), {}, now, callerUid)
   }
   if (callerUid !== ev.actingUid) throw new GameActionError('INVALID_GAME_ACTION', '只有国王本人可以留任务')
@@ -451,10 +453,12 @@ export function applyKingWriteTask(
 export function substituteEligibility(state: GameState, ack: PendingDrinkAck, uid: string): string | null {
   if (!state.ladyStatus.substitutePassUids.includes(uid)) return '你没有替喝机会'
   if (ack.targetUid !== uid) return '只能把自己的喝酒提醒交给别人替喝'
+  if (ack.coinPenalty) return '金币惩罚不能替喝'
   if (ack.amountText) return '半杯惩罚不能替喝'
   if (ack.transferredFromUid) return '这条提醒已经被替喝转过一次，不能再转'
   if (ack.substituteOffer) return '已经在等对方回应了'
-  if (drinkExemptionsDisabled(state.currentTarotId)) return '节制塔罗生效中：替喝暂时不能使用（与节制的关系待确认）'
+  if (ack.bluff) return '这条提醒正在吹牛'
+  if (drinkExemptionsDisabled(state.currentTarotId)) return '节制塔罗生效中：替喝属于挡酒效果，暂时不能使用'
   return null
 }
 
@@ -534,8 +538,9 @@ export function applySetAway(state: GameState, callerUid: string, hostUid: strin
 // 10 神经病：房主记录上当的人
 // ---------------------------------------------------------------------------
 
-export function applyCrazyCatch(state: GameState, callerUid: string, hostUid: string, violatorUid: string, now: number): GameState {
+export function applyCrazyCatch(state: GameState, callerUid: string, hostUid: string, violatorUid: string, now: number, incidentId: string | null = null): GameState {
   if (callerUid !== hostUid) throw new GameActionError('INVALID_GAME_ACTION', '只有房主可以记录上当的人')
+  if (incidentId && state.processedIncidentIds.includes(incidentId)) throw new GameActionError('INVALID_GAME_ACTION', '这次上当已经录入过了')
   const crazy = state.ladyStatus.crazyUid
   if (!crazy) throw new GameActionError('INVALID_GAME_ACTION', '现在没有神经病')
   requirePlayer(state, violatorUid)
@@ -544,6 +549,7 @@ export function applyCrazyCatch(state: GameState, callerUid: string, hostUid: st
     ...state,
     pendingDrinkAcks: pushDrinkAck(state.pendingDrinkAcks, violatorUid, LADY_PENALTY_SIPS, '小姐牌 10：搭理了神经病', now),
     history: appendHistory(state.history, '搭理了神经病，喝 1 口。', now, violatorUid),
+    processedIncidentIds: incidentId ? [...state.processedIncidentIds, incidentId].slice(-50) : state.processedIncidentIds,
   }
 }
 
@@ -566,7 +572,8 @@ export function applyMistressAccompany(prev: GameState, next: GameState, now: nu
   const newAcks = next.pendingDrinkAcks.filter((a) => !prevIds.has(a.id))
   // 已经陪过（同一次动作重复收尾）就不再加，保证幂等
   if (newAcks.some((a) => a.accompany)) return next
-  const added = newAcks.filter((a) => !a.accompany)
+  // 金币惩罚不是"喝酒惩罚"，不触发陪喝
+  const added = newAcks.filter((a) => !a.accompany && !a.coinPenalty)
   if (added.length === 0) return next
   if (added.some((a) => a.targetUid === mistress)) return next
   const acks = pushDrinkAck(next.pendingDrinkAcks, mistress, 1, '小姐牌 2：小姐陪喝', now)

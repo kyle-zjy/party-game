@@ -37,7 +37,8 @@ describe('initGameState', () => {
       expect(p.tacticHand).toHaveLength(1)
       expect(p.texasHoleCards).toHaveLength(2)
       expect(p.properties).toEqual([])
-      expect(p.identityCardId).toBe('identity-guest')
+      // V1.6 Q11：身份牌 = 阿瓦隆阵营
+      expect(p.identityCardId).toBe(`avalon-${state.avalon.roles[uid]}`)
       expect(p.position).toBe(startCellIdForColor(p.color))
     }
   })

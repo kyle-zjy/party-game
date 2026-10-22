@@ -123,7 +123,7 @@ export function magicianRefill(tarotId: string, alreadyPlayedThisTurn: boolean):
   return tarotId === TAROT_ID.MAGICIAN && !alreadyPlayedThisTurn
 }
 
-/** 节制：挡酒/免罚效果失效（当前已实现的唯一免罚效果是"以水代替"选项） */
+/** 节制（V1.6 补充 Q5）：游戏机制里的挡酒/免罚效果失效——桃、A 替喝、骗子酒馆吹牛免罚。以水代替和跳过不受影响 */
 export function drinkExemptionsDisabled(tarotId: string): boolean {
   return tarotId === TAROT_ID.TEMPERANCE
 }
@@ -198,7 +198,7 @@ export function activeTarotImpacts(tarotId: string): string[] {
     case TAROT_ID.HANGED_MAN:
       return ['真心话大冒险：只能选大冒险', '完成后从银行得 1 金币']
     case TAROT_ID.TEMPERANCE:
-      return ['喝酒：不能"以水代替"']
+      return ['桃、替喝、吹牛免罚暂时失效；以水代替和跳过仍然可以']
     case TAROT_ID.DEVIL:
       return ['被判 1 口：可改为付 1 金币并指定另一人喝 2 口']
     case TAROT_ID.TOWER:

@@ -173,3 +173,34 @@ describe('CloudBase SDK update payload: Phase D.2 lady fields (real SDK, no netw
     expect(written.ladyRuleset).toBe('official')
   })
 })
+
+describe('CloudBase SDK update payload: V1.6 nested fields (real SDK, no network)', () => {
+  it('Texas, Avalon, zones and tactic stack are written inside one atomic "game" field', async () => {
+    const { initGameState } = await import('../../../shared/game/engine/initGame')
+    const players = [0, 1, 2].map((i) => ({ uid: `u${i + 1}`, nickname: `P${i + 1}`, seat: i, isHost: i === 0, joinedAt: 1 }))
+    let game = initGameState(players, 1000, 'tarot-17', () => 0.4)
+    game = {
+      ...game,
+      players: { ...game.players, u1: { ...game.players.u1!, zone: { kind: 'gods', node: 3, dir: 1 }, mortgaged: ['命宫'] } },
+      tacticStack: { stackId: 's', originKind: 'tactic-sha', sourceUid: 'u1', targetUid: 'u2', entries: [{ entryId: 'e', cardId: 'tactic-sha', playerUid: 'u1' }], awaiting: ['u2'], passed: [], createdAt: 1 },
+    }
+    const app = createTestApp()
+    const query = app.database().collection('game_rooms').where({ _id: 'room-1', version: 7 })
+    const captured = interceptSend(query as unknown as Record<string, unknown>)
+    const command = app.database().command
+    await query.update({ game: command.set(game), version: command.set(8) })
+    const set = parsedSetPayload(captured)
+    expect(Object.keys(set).sort()).toEqual(['game', 'version'])
+    const written = set.game as Record<string, unknown> & {
+      texas: Record<string, unknown>
+      avalon: Record<string, unknown>
+      players: Record<string, { zone: Record<string, unknown> }>
+      tacticStack: Record<string, unknown>
+    }
+    expect(Object.keys(written.texas)).toContain('deck')
+    expect(Object.keys(written.avalon)).toContain('roles')
+    expect(written.players.u1!.zone.kind).toBe('gods')
+    expect(written.tacticStack.stackId).toBe('s')
+    expect(written.endgame).toBeNull()
+  })
+})

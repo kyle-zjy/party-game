@@ -28,9 +28,10 @@ export function LadyRulesSheet({
           </button>
         </div>
         <p className="mg-faint">
-          {devPreview
-            ? '本局是开发测试局：候选规则也会自动结算。'
-            : '正式对局：只有标"正式规则"的牌会自动结算；其余牌翻到后仍由房主现场裁定，下面的候选规则仅供参考。'}
+          {game.rulesVersion === 2
+            ? '本局使用 V1.6 数字版规则：13 张小姐牌全部自动结算。K 国王传承为你正式确认的规则，其余 12 张为 V1.6 数字版补充（V1.5 原稿只有牌名）。'
+            : '这是 V1.6 之前开局的旧房间：只有 K 自动结算，其余牌翻到后由房主现场裁定，下面的规则仅供参考。'}
+          {devPreview ? ' 开发测试局：房主可以指定下一张牌。' : ''}
         </p>
         <ul className="mg-lady-rules-list">
           {LADY_CARDS.map((card) => (
@@ -96,6 +97,7 @@ export function CrazyCatchSheet({
   onClose: () => void
 }) {
   const crazy = game.ladyStatus.crazyUid
+  const [incidentId] = useState(() => `crazy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   return (
     <div className="mg-scrim" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="mg-sheet" onClick={(e) => e.stopPropagation()}>
@@ -105,7 +107,7 @@ export function CrazyCatchSheet({
           {players
             .filter((p) => p.uid !== crazy)
             .map((p) => (
-              <button key={p.uid} type="button" className="mg-btn mg-btn-ghost" disabled={controller.busy} onClick={() => void controller.crazyCatch(p.uid).then(onClose)}>
+              <button key={p.uid} type="button" className="mg-btn mg-btn-ghost" disabled={controller.busy} onClick={() => void controller.crazyCatch(p.uid, incidentId).then(onClose)}>
                 {p.nickname}
               </button>
             ))}

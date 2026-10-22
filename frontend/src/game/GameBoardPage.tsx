@@ -18,6 +18,9 @@ import { LadyWindowStrip } from './ui/LadyWindowStrip'
 import { JusticeResultPanel } from './ui/JusticeResultPanel'
 import { LadyStatusStrip } from './ui/LadyStatusStrip'
 import { CrazyCatchSheet, LadyRulesSheet } from './ui/LadyRulesSheet'
+import { AvalonPanel, DreamPanel, EndgamePanel, TableSheet, TexasPanel } from './ui/V16Panels'
+import { TableInfoBar } from './ui/TableInfoBar'
+import { riverGodUid } from '../../../shared/game/engine/zones'
 import { getTarotCard } from '../../../shared/game/cards/tarotCards'
 import { BOARD_SIZE } from '../../../shared/game/board'
 import { contextualHostLine } from './tutorial/tutorialLines'
@@ -27,7 +30,7 @@ import type { GameRoom } from '../../../shared/gameRoomTypes'
 import './theme.css'
 import './ui/gameBoardPage.css'
 
-type DrawerKind = 'leaderboard' | 'history' | 'tarot' | 'help' | 'menu' | 'ban' | 'ladyRules' | 'crazy' | null
+type DrawerKind = 'leaderboard' | 'history' | 'tarot' | 'help' | 'menu' | 'ban' | 'ladyRules' | 'crazy' | 'table' | null
 
 export function GameBoardPage() {
   const { state } = useGameRoomContext()
@@ -59,6 +62,11 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
   const isMyTurn = game.turn.currentPlayerUid === myUid
   const isHost = room.players.find((p) => p.uid === myUid)?.isHost ?? false
   const hostUid = room.players.find((p) => p.isHost)?.uid ?? null
+  const v16 = game.rulesVersion === 2
+  // 需要玩家操作的事件进行中：操作区可以占更多高度（内部滚动），棋盘保持可见
+  const eventMode = Boolean(
+    game.turn.pendingDecision || (game.ladyEvent && game.ladyEvent.status === 'ACTIVE') || game.tacticStack || game.endgame,
+  )
   const nicknameOf = useCallback((uid: string) => room.players.find((p) => p.uid === uid)?.nickname ?? '一位玩家', [room.players])
   const currentNickname = nicknameOf(game.turn.currentPlayerUid)
 
@@ -76,7 +84,7 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
   const highlightPath = useMemo(() => {
     const current = game.players[game.turn.currentPlayerUid]
     const roll = game.turn.lastRoll
-    if (!current || !roll || game.turn.phase !== 'LANDING' || game.turn.landingResolved) return []
+    if (!current || !roll || game.turn.phase !== 'LANDING' || game.turn.landingResolved || current.zone.kind !== 'ring') return []
     return Array.from({ length: roll.effective + 1 }, (_, s) => (current.position + s) % BOARD_SIZE)
   }, [game])
 
@@ -97,26 +105,55 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
         currentNickname={currentNickname}
         isMyTurn={isMyTurn}
         phase={game.turn.phase}
-        onOpenTarot={() => setDrawer('tarot')}
+        legacyRules={!v16}
         onOpenMenu={() => setDrawer('menu')}
       />
 
       <div className="mg-scroll-area mg-scrollbar-hidden">
         <HostLineBanner line={contextualHostLine(game, myUid, isHost, nicknameOf)} />
-        <ActiveTarotStrip game={game} nicknameOf={nicknameOf} onOpen={() => setDrawer('tarot')} />
-        <LadyWindowStrip game={game} />
-
-        <GameBoard players={animatedPlayers} currentUid={myUid} highlightPath={highlightPath} worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`} />
-
-        <LadyStatusStrip
+        <TableInfoBar
           game={game}
           myUid={myUid}
-          isHost={isHost}
           nicknameOf={nicknameOf}
-          controller={controller}
-          onOpenRules={() => setDrawer('ladyRules')}
-          onCrazyCatch={() => setDrawer('crazy')}
+          renderSection={(section) =>
+            section === 'tarot' ? (
+              <ActiveTarotStrip game={game} nicknameOf={nicknameOf} onOpen={() => setDrawer('tarot')} />
+            ) : section === 'heart' ? (
+              <LadyWindowStrip game={game} />
+            ) : (
+              <LadyStatusStrip
+                game={game}
+                myUid={myUid}
+                isHost={isHost}
+                nicknameOf={nicknameOf}
+                controller={controller}
+                onOpenRules={() => setDrawer('ladyRules')}
+                onCrazyCatch={() => setDrawer('crazy')}
+              />
+            )
+          }
         />
+
+        <EndgamePanel game={game} myUid={myUid} nicknameOf={nicknameOf} />
+
+        <GameBoard
+          players={animatedPlayers}
+          currentUid={myUid}
+          activeUid={game.turn.currentPlayerUid}
+          highlightPath={highlightPath}
+          worldTarotLabel={`${worldTarot.romanNumeral} ${worldTarot.name}`}
+          showCentral={v16}
+          godsOpen={game.godsPathOpen}
+          riverGodUid={riverGodUid(game)}
+        />
+
+        {/* 需要我马上操作的牌桌事件放在棋盘下面；其余德州/阿瓦隆信息放进"牌桌"抽屉 */}
+        {v16 && game.dream && <DreamPanel game={game} myUid={myUid} nicknameOf={nicknameOf} controller={controller} />}
+        {v16 && game.avalon.active && (
+          <AvalonPanel game={game} myUid={myUid} isHost={isHost} roomPlayers={room.players} nicknameOf={nicknameOf} controller={controller} />
+        )}
+        {v16 && game.texas.betting && <TexasPanel game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />}
+
         <TarotDiscardTray game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />
         <DrinkAckTray
           game={game}
@@ -131,11 +168,19 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
         />
 
         <div className="mg-quick-nav">
+          {v16 && (
+            <button type="button" className="mg-pill" onClick={() => setDrawer('table')}>
+              牌桌（德州 / 阿瓦隆）
+            </button>
+          )}
           <button type="button" className="mg-pill" onClick={() => setDrawer('leaderboard')}>
             排行榜
           </button>
           <button type="button" className="mg-pill" onClick={() => setDrawer('history')}>
             最近事件
+          </button>
+          <button type="button" className="mg-pill" onClick={() => setDrawer('ladyRules')}>
+            小姐牌规则
           </button>
           <button type="button" className="mg-pill" onClick={() => setDrawer('help')}>
             帮助
@@ -157,7 +202,7 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
         </div>
       )}
 
-      <div className="mg-bottom-dock">
+      <div className={`mg-bottom-dock${eventMode ? ' mg-dock-event' : ''}`}>
         <MyResourcesBar me={me} onOpenProperties={() => setDrawer('leaderboard')} onOpenHand={() => setDrawer('help')} />
         <ActionPanel
           game={game}
@@ -174,10 +219,18 @@ function GameBoardInner({ room, myUid }: { room: GameRoom; myUid: string }) {
         />
       </div>
 
-      {drawer === 'leaderboard' && <LeaderboardDrawer players={playersList} roomPlayers={room.players} myUid={myUid} onClose={() => setDrawer(null)} />}
+      {drawer === 'leaderboard' && (
+        <LeaderboardDrawer game={game} players={playersList} roomPlayers={room.players} myUid={myUid} controller={controller} onClose={() => setDrawer(null)} />
+      )}
       {drawer === 'history' && <HistoryDrawer history={game.history} nicknameOf={nicknameOf} onClose={() => setDrawer(null)} />}
       {drawer === 'tarot' && <TarotDrawer currentTarotId={game.currentTarotId} onClose={() => setDrawer(null)} />}
       {(drawer === 'help' || drawer === 'menu') && <HelpDrawer onClose={() => setDrawer(null)} />}
+      {drawer === 'table' && (
+        <TableSheet onClose={() => setDrawer(null)}>
+          <TexasPanel game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />
+          <AvalonPanel game={game} myUid={myUid} isHost={isHost} roomPlayers={room.players} nicknameOf={nicknameOf} controller={controller} />
+        </TableSheet>
+      )}
       {drawer === 'ladyRules' && <LadyRulesSheet game={game} isHost={isHost} controller={controller} onClose={() => setDrawer(null)} />}
       {drawer === 'crazy' && isHost && <CrazyCatchSheet game={game} players={room.players} controller={controller} onClose={() => setDrawer(null)} />}
       {drawer === 'ban' && isHost && <BanCatchSheet players={room.players} tarotId={game.currentTarotId} controller={controller} onClose={() => setDrawer(null)} />}

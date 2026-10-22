@@ -1,11 +1,10 @@
 /**
  * 三国杀战术手牌（V1.5 规则书"5. 三国杀手牌"）。手牌上限 3。
  *
- * playMode：
- * - active：本回合战术阶段主动打出（杀、顺手牵羊）。
- * - response：只能作为响应使用（桃：在喝酒提醒上使用，取消 1 口）。
- * - pending：规则书有名称/效果，但需要的响应窗口还没实现（闪、无懈可击），
- *   或规则书本身没写效果（过河拆桥），暂不能打出。
+ * playMode（V1.6 房间）：
+ * - active：本回合战术阶段主动打出（杀、顺手牵羊、过河拆桥），打出后进入统一响应窗口（engine/tacticStack.ts）。
+ * - response：只能作为响应使用（闪：响应针对自己的杀；无懈可击：响应任意战术牌；桃：在喝酒提醒上使用）。
+ * V1.5 旧房间没有响应窗口：闪、无懈可击、过河拆桥仍不能打出（见 tacticPlayableInRoom）。
  *
  * copies：规则书写明的张数，抽牌按这个比例加权（共 36 张，视为洗回牌堆的无限牌堆）。
  */
@@ -18,9 +17,9 @@ export const TACTIC_CARDS: TacticCardDef[] = [
   {
     id: 'tactic-shan',
     name: '闪',
-    description: '取消一次"杀"对你的效果——需要在被杀的瞬间响应，响应窗口尚未实现，暂不能打出',
+    description: '响应牌：别人对你打出"杀"时使用，抵消这张杀',
     ruleStatus: 'confirmed',
-    playMode: 'pending',
+    playMode: 'response',
     requiresTarget: false,
     copies: 8,
   },
@@ -36,15 +35,29 @@ export const TACTIC_CARDS: TacticCardDef[] = [
   {
     id: 'tactic-wuxie',
     name: '无懈可击',
-    description: '取消任意手牌作用——需要响应窗口，尚未实现，暂不能打出',
+    description: '响应牌：在任何战术牌（包括另一张无懈可击）即将生效时使用，取消它',
     ruleStatus: 'confirmed',
-    playMode: 'pending',
+    playMode: 'response',
     requiresTarget: false,
     copies: 4,
   },
   { id: 'tactic-shunshou', name: '顺手牵羊', description: '从左边或右边相邻玩家那里拿走 1 金币', ruleStatus: 'confirmed', playMode: 'active', requiresTarget: true, copies: 4 },
-  { id: 'tactic-guohe', name: '过河拆桥', description: '规则待确认：原稿只写了"？"，暂不能打出', ruleStatus: 'pending', playMode: 'pending', requiresTarget: false, copies: 4 },
+  {
+    id: 'tactic-guohe',
+    name: '过河拆桥',
+    description: '（V1.6 数字版补充，原稿为"？"）指定任意 1 名其他玩家，随机弃掉 TA 1 张战术手牌；可以被无懈可击取消',
+    ruleStatus: 'confirmed',
+    playMode: 'active',
+    requiresTarget: true,
+    copies: 4,
+  },
 ]
+
+/** V1.5 旧房间没有响应窗口：闪、无懈可击、过河拆桥不能打出 */
+export function tacticPlayableInRoom(cardId: string, rulesVersion: 1 | 2): boolean {
+  if (rulesVersion === 2) return getTacticCard(cardId).playMode === 'active'
+  return cardId === 'tactic-sha' || cardId === 'tactic-shunshou'
+}
 
 export function getTacticCard(id: string): TacticCardDef {
   const card = TACTIC_CARDS.find((c) => c.id === id)

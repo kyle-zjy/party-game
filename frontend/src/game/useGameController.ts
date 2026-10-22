@@ -39,10 +39,28 @@ import {
   setAwayAction,
   crazyCatchAction,
   devStackLadyDeckAction,
+  skipRollTurnAction,
+  mortgageAction,
+  respondTacticAction,
+  passTacticAction,
+  texasBetAction,
+  texasCloseBettingAction,
+  startBluffAction,
+  respondBluffAction,
+  dreamChallengeAction,
+  dreamRespondAction,
+  dreamDeclareAction,
+  avalonPickAction,
+  avalonVoteAction,
+  avalonCancelAction,
+  riverChoiceAction,
+  enterGodsAction,
+  redrawTruthOrDareAction,
 } from '../lib/gameEngineDb'
 import { describeUnknownError } from '../../../shared/errors'
 import type { GameRoom } from '../../../shared/gameRoomTypes'
 import type { DrinkAckChoice, LadyRank } from '../../../shared/game/types'
+import type { TexasBetAction } from '../../../shared/game/engine/texas'
 
 export interface GameController {
   busy: boolean
@@ -62,7 +80,7 @@ export interface GameController {
   chooseLovers: (uidA: string, uidB: string) => Promise<void>
   justiceSwap: (winnerUid: string | null, loserUid: string | null) => Promise<void>
   tarotDiscard: (targetUid: string, cardId: string) => Promise<void>
-  banCatch: (catcherUid: string, violatorUid: string, correct: boolean) => Promise<void>
+  banCatch: (catcherUid: string, violatorUid: string, correct: boolean, incidentId: string) => Promise<void>
   revealLadyCard: () => Promise<void>
   playTacticCard: (cardId: string, targetUid: string | null) => Promise<void>
   skipTactic: () => Promise<void>
@@ -79,8 +97,25 @@ export interface GameController {
   offerSubstitute: (ackId: string, toUid: string) => Promise<void>
   respondSubstitute: (ackId: string, accept: boolean) => Promise<void>
   setAway: (targetUid: string, away: boolean, usePass: boolean) => Promise<void>
-  crazyCatch: (violatorUid: string) => Promise<void>
+  crazyCatch: (violatorUid: string, incidentId: string) => Promise<void>
   devStackLadyDeck: (rank: LadyRank) => Promise<void>
+  skipRollTurn: () => Promise<void>
+  mortgage: (propertyName: string, mortgage: boolean) => Promise<void>
+  respondTactic: (stackId: string, cardId: string) => Promise<void>
+  passTactic: (stackId: string, forUid: string) => Promise<void>
+  texasBet: (action: TexasBetAction) => Promise<void>
+  texasCloseBetting: () => Promise<void>
+  startBluff: (ackId: string, claim: string) => Promise<void>
+  respondBluff: (ackId: string, challenge: boolean, closeAll?: boolean) => Promise<void>
+  dreamChallenge: (eventId: string, targetUid: string) => Promise<void>
+  dreamRespond: (eventId: string, accept: boolean) => Promise<void>
+  dreamDeclare: (eventId: string, card: string) => Promise<void>
+  avalonPick: (missionId: string, passengers: string[]) => Promise<void>
+  avalonVote: (missionId: string, vote: 'SUCCESS' | 'FAIL') => Promise<void>
+  avalonCancel: (missionId: string) => Promise<void>
+  riverChoice: (choice: 'BRIDGE' | 'FORD') => Promise<void>
+  enterGods: (enter: boolean) => Promise<void>
+  redrawTruthOrDare: () => Promise<void>
 }
 
 export function useGameController(roomId: string | null, uid: string | null): GameController {
@@ -135,7 +170,7 @@ export function useGameController(roomId: string | null, uid: string | null): Ga
     chooseLovers: (uidA, uidB) => run((r, u) => chooseLoversAction(r, u, uidA, uidB)),
     justiceSwap: (winnerUid, loserUid) => run((r, u) => justiceSwapAction(r, u, winnerUid, loserUid)),
     tarotDiscard: (targetUid, cardId) => run((r, u) => tarotDiscardAction(r, u, targetUid, cardId)),
-    banCatch: (catcherUid, violatorUid, correct) => run((r, u) => banCatchAction(r, u, catcherUid, violatorUid, correct)),
+    banCatch: (catcherUid, violatorUid, correct, incidentId) => run((r, u) => banCatchAction(r, u, catcherUid, violatorUid, correct, incidentId)),
     revealLadyCard: () => run(revealLadyCardAction),
     playTacticCard: (cardId, targetUid) => run((r, u) => playTacticCardAction(r, u, cardId, targetUid)),
     skipTactic: () => run(skipTacticAction),
@@ -151,7 +186,24 @@ export function useGameController(roomId: string | null, uid: string | null): Ga
     offerSubstitute: (ackId, toUid) => run((r, u) => offerSubstituteAction(r, u, ackId, toUid)),
     respondSubstitute: (ackId, accept) => run((r, u) => respondSubstituteAction(r, u, ackId, accept)),
     setAway: (targetUid, away, usePass) => run((r, u) => setAwayAction(r, u, targetUid, away, usePass)),
-    crazyCatch: (violatorUid) => run((r, u) => crazyCatchAction(r, u, violatorUid)),
+    crazyCatch: (violatorUid, incidentId) => run((r, u) => crazyCatchAction(r, u, violatorUid, incidentId)),
     devStackLadyDeck: (rank) => run((r, u) => devStackLadyDeckAction(r, u, rank)),
+    skipRollTurn: () => run(skipRollTurnAction),
+    mortgage: (propertyName, mortgage) => run((r, u) => mortgageAction(r, u, propertyName, mortgage)),
+    respondTactic: (stackId, cardId) => run((r, u) => respondTacticAction(r, u, stackId, cardId)),
+    passTactic: (stackId, forUid) => run((r, u) => passTacticAction(r, u, stackId, forUid)),
+    texasBet: (action) => run((r, u) => texasBetAction(r, u, action)),
+    texasCloseBetting: () => run(texasCloseBettingAction),
+    startBluff: (ackId, claim) => run((r, u) => startBluffAction(r, u, ackId, claim)),
+    respondBluff: (ackId, challenge, closeAll = false) => run((r, u) => respondBluffAction(r, u, ackId, challenge, closeAll)),
+    dreamChallenge: (eventId, targetUid) => run((r, u) => dreamChallengeAction(r, u, eventId, targetUid)),
+    dreamRespond: (eventId, accept) => run((r, u) => dreamRespondAction(r, u, eventId, accept)),
+    dreamDeclare: (eventId, card) => run((r, u) => dreamDeclareAction(r, u, eventId, card)),
+    avalonPick: (missionId, passengers) => run((r, u) => avalonPickAction(r, u, missionId, passengers)),
+    avalonVote: (missionId, vote) => run((r, u) => avalonVoteAction(r, u, missionId, vote)),
+    avalonCancel: (missionId) => run((r, u) => avalonCancelAction(r, u, missionId)),
+    riverChoice: (choice) => run((r, u) => riverChoiceAction(r, u, choice)),
+    enterGods: (enter) => run((r, u) => enterGodsAction(r, u, enter)),
+    redrawTruthOrDare: () => run(redrawTruthOrDareAction),
   }
 }

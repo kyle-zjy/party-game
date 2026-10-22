@@ -48,8 +48,13 @@ const HOST = 'u1'
 function players(n = 3): GameRoomPlayer[] {
   return Array.from({ length: n }, (_, i) => ({ uid: `u${i + 1}`, nickname: `P${i + 1}`, seat: i, isHost: i === 0, joinedAt: 1 }))
 }
+/**
+ * 'official' = Phase D.3 之前开局的 V1.5 旧房间（只有 K 自动结算，其余房主裁定）；
+ * 'candidate-preview' = 自动结算全部 13 张（等同 V1.6 新房间的小姐牌行为）。
+ */
 function game(ruleset: LadyRuleset = 'candidate-preview', n = 3, tarotId: string = TAROT_ID.STAR): GameState {
-  return initGameState(players(n), 1000, tarotId, () => 0, ruleset)
+  const s = initGameState(players(n), 1000, tarotId, () => 0, ruleset)
+  return ruleset === 'official' ? { ...s, rulesVersion: 1 } : s
 }
 /** 把指定的牌放在牌堆顶，并让 uid 成为当前玩家、进入翻牌阶段 */
 function atCard(state: GameState, cardId: string, uid = 'u1'): GameState {
@@ -107,13 +112,16 @@ describe('规则开关：未确认的候选规则不会进入正式对局', () =
   it('isLadyRuleActive gates candidates by ruleset', () => {
     const two = LADY_CARDS.find((c) => c.rank === '2')!
     const king = LADY_CARDS.find((c) => c.rank === 'K')!
-    expect(isLadyRuleActive({ ladyRuleset: 'official' }, two)).toBe(false)
-    expect(isLadyRuleActive({ ladyRuleset: 'candidate-preview' }, two)).toBe(true)
-    expect(isLadyRuleActive({ ladyRuleset: 'official' }, king)).toBe(true)
+    expect(isLadyRuleActive({ ladyRuleset: 'official', rulesVersion: 1 }, two)).toBe(false)
+    expect(isLadyRuleActive({ ladyRuleset: 'candidate-preview', rulesVersion: 1 }, two)).toBe(true)
+    expect(isLadyRuleActive({ ladyRuleset: 'official', rulesVersion: 1 }, king)).toBe(true)
+    // V1.6 房间：13 张全部启用
+    expect(isLadyRuleActive({ ladyRuleset: 'official', rulesVersion: 2 }, two)).toBe(true)
   })
 
   it('legacy rooms (no ladyRuleset field) normalize to official', () => {
     const legacy = { ...game('candidate-preview') } as Partial<GameState>
+    delete legacy.rulesVersion
     delete legacy.ladyRuleset
     delete legacy.ladyEvent
     delete legacy.ladyStatus
@@ -596,7 +604,8 @@ describe('联动：塔罗、战术牌、喝酒提醒', () => {
     expect(acksFor(saved, 'u2')).toEqual([])
     const temperance = { ...s, currentTarotId: TAROT_ID.TEMPERANCE }
     expect(() => applyUsePeach(temperance, 'u3', ack.id, NOW)).toThrow(GameActionError)
-    expect(() => applyResolveDrinkAck(temperance, 'u2', HOST, ack.id, 'WATER', NOW)).toThrow(GameActionError)
+    // V1.6 Q5：以水代替不受节制影响
+    expect(applyResolveDrinkAck(temperance, 'u2', HOST, ack.id, 'WATER', NOW).pendingDrinkAcks).toEqual([])
     // 跳过始终可以
     expect(applyResolveDrinkAck(temperance, 'u2', HOST, ack.id, 'SKIP', NOW).pendingDrinkAcks).toEqual([])
   })

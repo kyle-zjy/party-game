@@ -117,7 +117,7 @@ export function GameRoomLobbyPage() {
         )}
         {isHost && import.meta.env.DEV && (
           <button className="btn btn-secondary" disabled={!canStart || starting} onClick={() => void handleStart('candidate-preview')}>
-            开发测试：开始游戏（启用候选小姐牌规则）
+            开发测试：开始游戏（房主可以指定下一张小姐牌）
           </button>
         )}
         {startError && <p className="text-error">{startError}</p>}

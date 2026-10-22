@@ -20,12 +20,14 @@ export function BanCatchSheet({
 }) {
   const [catcher, setCatcher] = useState<string | null>(null)
   const [violator, setViolator] = useState<string | null>(null)
+  // 每次打开面板 = 一次违规事件，重复点击/重试都带同一个 id，只结算一次
+  const [incidentId] = useState(() => `ban-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
   const reward = tarotId === TAROT_ID.HIEROPHANT ? 2 : 1
   const ready = catcher && violator && catcher !== violator
 
   const submit = (correct: boolean) => {
     if (!catcher || !violator) return
-    void controller.banCatch(catcher, violator, correct).then(onClose)
+    void controller.banCatch(catcher, violator, correct, incidentId).then(onClose)
   }
 
   return (

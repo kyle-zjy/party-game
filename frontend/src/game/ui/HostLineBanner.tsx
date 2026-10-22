@@ -2,24 +2,27 @@ import { useState } from 'react'
 import type { HostLine } from '../tutorial/tutorialLines'
 import { HostAvatar } from './HostAvatar'
 
-/** "今晚的主持人"气泡——贯穿全程的情境式教学提示，点开可以看补充说明 */
+/** "今晚的主持人"提示：默认最多两行，点一下展开完整说明 */
 export function HostLineBanner({ line }: { line: HostLine }) {
   const [expanded, setExpanded] = useState(false)
+  const canExpand = Boolean(line.detail) || line.message.length > 34
 
   return (
-    <div className="mg-host-banner mg-fade-in" key={line.message}>
-      <div className="mg-host-avatar">
+    <button
+      type="button"
+      className={`mg-host-banner mg-host-banner-compact mg-fade-in${expanded ? ' mg-host-banner-open' : ''}`}
+      key={line.message}
+      onClick={() => canExpand && setExpanded((v) => !v)}
+      aria-expanded={expanded}
+    >
+      <span className="mg-host-avatar">
         <HostAvatar />
-      </div>
-      <div className="mg-host-text">
-        <p className="mg-host-message">{line.message}</p>
-        {line.detail && (
-          <button type="button" className="mg-host-detail-toggle" onClick={() => setExpanded((v) => !v)}>
-            {expanded ? '收起说明 ▲' : '为什么要这样做？ ▼'}
-          </button>
-        )}
-        {expanded && line.detail && <p className="mg-host-detail">{line.detail}</p>}
-      </div>
-    </div>
+      </span>
+      <span className="mg-host-text">
+        <span className="mg-host-message">{line.message}</span>
+        {expanded && line.detail && <span className="mg-host-detail">{line.detail}</span>}
+      </span>
+      {canExpand && <span className="mg-host-chevron">{expanded ? '▲' : '▼'}</span>}
+    </button>
   )
 }

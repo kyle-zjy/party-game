@@ -2,12 +2,14 @@ import { useState } from 'react'
 import type { GameController } from '../useGameController'
 import type { GameRoomPlayer } from '../../../../shared/gameRoomTypes'
 import type { GamePlayerState, GameState, PendingDecision } from '../../../../shared/game/types'
-import { TACTIC_HAND_LIMIT, getTacticCard } from '../../../../shared/game/cards/tacticCards'
+import { TACTIC_HAND_LIMIT, getTacticCard, tacticPlayableInRoom } from '../../../../shared/game/cards/tacticCards'
 import { getTarotCard } from '../../../../shared/game/cards/tarotCards'
 import { neighborUid } from '../../../../shared/game/engine/stateHelpers'
 import { allowedTruthOrDareChoices, truthOrDareCompletionBonus, TAROT_ID } from '../../../../shared/game/engine/tarotEffects'
 import { truthOrDareRefusalPenalty } from '../../../../shared/game/engine/turnEngine'
+import { getPrompt } from '../../../../shared/game/cards/truthOrDareBank'
 import { LadyCardReveal, LadyEventPanel } from './LadyEventPanel'
+import { TacticStackPanel, ZoneDecisionPanel } from './V16Panels'
 import { DiceButton } from './DiceButton'
 import { HOST_LINE_BUY_PROPERTY, HOST_LINE_HOST_RULING } from '../tutorial/tutorialLines'
 
@@ -28,6 +30,15 @@ interface ActionPanelProps {
 export function ActionPanel({ game, myUid, hostUid, isMyTurn, isHost, rolling, onRollDice, me, roomPlayers, nicknameOf, controller }: ActionPanelProps) {
   const { phase, pendingDecision, lastRoll, revealedLadyCardId } = game.turn
   const currentName = nicknameOf(game.turn.currentPlayerUid)
+
+  if (game.endgame) {
+    return <WaitingNote text={game.endgame.phase === 'DONE' ? '游戏已结束，结果见上方排行榜。' : '终局进行中：只进行阿瓦隆收尾，请看上方面板。'} />
+  }
+
+  // 战术牌响应窗口：所有人都看到同一个面板
+  if (game.tacticStack) {
+    return <TacticStackPanel game={game} myUid={myUid} isHost={isHost} nicknameOf={nicknameOf} controller={controller} />
+  }
 
   // 进行中的小姐牌事件：所有人都看到同一个面板，按身份显示可以做的操作
   if (game.ladyEvent && game.ladyEvent.status === 'ACTIVE') {
@@ -62,6 +73,17 @@ export function ActionPanel({ game, myUid, hostUid, isMyTurn, isHost, rolling, o
 
   if (!isMyTurn) {
     return <WaitingNote text={`等待 ${currentName} 操作，你的界面会自动同步…`} />
+  }
+
+  if (phase === 'ROLLING' && !game.turn.extraRollPending && me.skipNextRoll) {
+    return (
+      <div className="mg-action-panel mg-stack">
+        <p className="mg-muted">你本回合停骰（停骰一次 / 下家禁骰）：不掷骰、不移动，直接翻小姐牌，之后照常可以出战术牌。</p>
+        <button type="button" className="mg-btn mg-btn-primary" disabled={controller.busy} onClick={() => void controller.skipRollTurn()}>
+          停骰：直接翻主牌
+        </button>
+      </div>
+    )
   }
 
   if (phase === 'ROLLING') {
@@ -160,8 +182,19 @@ function PendingDecisionPanel({
     const allowed = allowedTruthOrDareChoices(game.currentTarotId)
     const bonus = truthOrDareCompletionBonus(game.currentTarotId)
     const tarotName = getTarotCard(game.currentTarotId).name
+    const prompt = decision.promptId ? getPrompt(decision.promptId) : undefined
     if (!isMyTurn) {
-      return <WaitingNote text={decision.choice ? `${currentName} 正在线下完成${decision.choice === 'TRUTH' ? '真心话' : '大冒险'}…` : `${currentName} 正在选择真心话或大冒险…`} />
+      return (
+        <div className="mg-action-panel mg-stack">
+          {prompt && <p className="mg-king-task-text">「{prompt.text}」</p>}
+          <WaitingNote text={decision.choice ? `${currentName} 正在线下完成${decision.choice === 'TRUTH' ? '真心话' : '大冒险'}…` : `${currentName} 正在选择真心话或大冒险…`} />
+          {isHost && prompt && (
+            <button type="button" className="mg-btn mg-btn-ghost mg-lady-cancel" disabled={controller.busy} onClick={() => void controller.redrawTruthOrDare()}>
+              房主：这题不合适，换一题（不受罚）
+            </button>
+          )}
+        </div>
+      )
     }
     if (decision.choice === null) {
       return (
@@ -184,7 +217,19 @@ function PendingDecisionPanel({
     return (
       <div className="mg-action-panel mg-stack">
         {allowed.length === 1 && <p className="mg-tarot-inline">{tarotName}生效中：只能选{label}</p>}
-        <p className="mg-muted">请在线下完成{label}，然后选择结果。</p>
+        {prompt ? (
+          <div className="mg-king-task">
+            <p className="mg-faint">你的{label}题目：</p>
+            <p className="mg-king-task-text">「{prompt.text}」</p>
+          </div>
+        ) : (
+          <p className="mg-muted">请在线下完成{label}，然后选择结果。</p>
+        )}
+        {prompt && (
+          <button type="button" className="mg-btn mg-btn-ghost mg-lady-cancel" disabled={controller.busy} onClick={() => void controller.redrawTruthOrDare()}>
+            这题不合适，换一题（不受罚）
+          </button>
+        )}
         <p className="mg-faint">
           不做/不答：上缴当前金币的一半（向下取整）给银行——你有 {coins} 金币，将上缴 {penalty} 金币；再喝半杯（可以用非酒精饮品代替）。地产和手牌不受影响。
         </p>
@@ -200,6 +245,10 @@ function PendingDecisionPanel({
     )
   }
 
+  if (decision.kind === 'RIVER_CROSS' || decision.kind === 'ENTER_GODS') {
+    return <ZoneDecisionPanel game={game} decision={decision} isMyTurn={isMyTurn} currentName={currentName} nicknameOf={nicknameOf} controller={controller} />
+  }
+
   if (decision.kind === 'CHOOSE_LOVERS') {
     if (!isMyTurn) return <WaitingNote text={`恋人塔罗：${currentName} 正在指定两名玩家绑定…`} />
     return <LoversPicker players={roomPlayers} disabled={controller.busy} onConfirm={(a, b) => void controller.chooseLovers(a, b)} />
@@ -210,14 +259,15 @@ function PendingDecisionPanel({
     return <JusticePicker players={roomPlayers} disabled={controller.busy} nicknameOf={nicknameOf} onConfirm={(w, l) => void controller.justiceSwap(w, l)} />
   }
 
-  // HOST_RULING / NATURAL_SIX_CHAIN：规则书未写明，交给房主
+  // HOST_RULING：规则书未写明（V1.5 旧房间的部分格子和小姐牌），交给房主
   return (
     <div className="mg-action-panel mg-stack">
+      {game.rulesVersion !== 2 && <p className="mg-legacy-note">此房间使用 V1.5 规则（V1.6 上线前开局）：这一项由房主现场裁定。</p>}
       <p className="mg-muted">{HOST_LINE_HOST_RULING.message}</p>
-      {decision.kind === 'HOST_RULING' && game.turn.phase === 'TACTIC' && game.turn.revealedLadyCardId && (
-        <LadyCardReveal game={game} cardId={game.turn.revealedLadyCardId} />
+      {game.turn.phase === 'TACTIC' && game.turn.revealedLadyCardId && (
+        <LadyCardReveal game={game} cardId={game.turn.revealedLadyCardId} compact />
       )}
-      <p className="mg-faint">{decision.kind === 'HOST_RULING' ? decision.description : '额外掷骰又摇出 6，是否继续连锁？'}</p>
+      <p className="mg-faint">{decision.description}</p>
       <p className="mg-faint">需要执行的人：{currentName}。线下按房主的裁定执行完后，由房主点击确认，回合继续。</p>
       {isHost ? (
         <button type="button" className="mg-btn mg-btn-primary" disabled={controller.busy} onClick={() => void controller.hostRulingAck()}>
@@ -306,11 +356,13 @@ function TacticPanel({
   const used = game.turn.activeTacticUsed
   const neighbors = new Set([neighborUid(game, me.uid, -1), neighborUid(game, me.uid, 1)])
   const targets = roomPlayers.filter((p) => p.uid !== me.uid && (selectedCardId !== 'tactic-shunshou' || neighbors.has(p.uid)))
+  const stackResult = game.lastTacticResult && game.lastTacticResult.sourceUid === me.uid && game.turn.activeTacticUsed ? game.lastTacticResult : null
 
   return (
     <div className="mg-action-panel mg-stack">
-      {revealedLadyCardId && <LadyCardReveal game={game} cardId={revealedLadyCardId} />}
-      {game.ladyEvent?.status === 'RESOLVED' && game.ladyEvent.result && <p className="mg-lady-step">结果：{game.ladyEvent.result.summary}</p>}
+      {revealedLadyCardId && <LadyCardReveal game={game} cardId={revealedLadyCardId} compact />}
+      {game.ladyEvent?.status === 'RESOLVED' && game.ladyEvent.result && <LadyResultLine game={game} myUid={me.uid} roomPlayers={roomPlayers} />}
+      {stackResult && <p className="mg-lady-step">出牌结果：{stackResult.summary}</p>}
       <p className="mg-muted">
         {used ? '本回合已经出过牌了，可以结束回合。' : `可选：主动打出 1 张战术牌，或者直接结束回合。（手牌 ${me.tacticHand.length}/${TACTIC_HAND_LIMIT}）`}
       </p>
@@ -322,7 +374,7 @@ function TacticPanel({
           {me.tacticHand.length === 0 && <p className="mg-faint">手牌是空的。</p>}
           {me.tacticHand.map((cardId, idx) => {
             const def = getTacticCard(cardId)
-            const playable = def.playMode === 'active'
+            const playable = tacticPlayableInRoom(cardId, game.rulesVersion)
             const selected = selectedCardId === cardId
             return (
               <button
@@ -336,7 +388,9 @@ function TacticPanel({
                 }}
               >
                 <span className="mg-display mg-tactic-card-name">{def.name}</span>
-                <span className="mg-faint mg-tactic-card-desc">{playable ? def.description : def.playMode === 'response' ? '响应牌：在喝酒提醒上使用' : '暂不能主动打出'}</span>
+                <span className="mg-faint mg-tactic-card-desc">
+                  {playable ? def.description : cardId === 'tactic-tao' ? '响应牌：在喝酒提醒上使用' : def.playMode === 'response' ? '响应牌：别人出牌时会提示你使用' : '旧房间不能打出'}
+                </span>
               </button>
             )
           })}
@@ -368,4 +422,27 @@ function TacticPanel({
       </button>
     </div>
   )
+}
+
+/**
+ * 已结算的小姐牌结果（V1.6）。J / Q 写明目标昵称和"1 次喝酒提醒"——
+ * 牌面右下角的 ×N 是德国心脏病计数，不是喝酒口数。
+ */
+function LadyResultLine({ game, myUid, roomPlayers }: { game: GameState; myUid: string; roomPlayers: GameRoomPlayer[] }) {
+  const ev = game.ladyEvent!
+  const nick = (uid: string) => (uid === myUid ? '你' : (roomPlayers.find((p) => p.uid === uid)?.nickname ?? '一位玩家'))
+  if ((ev.rank === 'J' || ev.rank === 'Q') && ev.targetUid) {
+    const side = ev.rank === 'J' ? '左边喝（上家）' : '右边喝（下家）'
+    return (
+      <div className="mg-lady-result">
+        <p className="mg-lady-step">
+          {nick(ev.actingUid)}抽到了 {ev.rank} · {side}！
+        </p>
+        <p className="mg-faint">
+          按照当前行动顺序，轮到【{nick(ev.targetUid)}】接受一次喝酒提醒（1 口，可以以水代替或跳过）。已为【{nick(ev.targetUid)}】生成提醒。
+        </p>
+      </div>
+    )
+  }
+  return <p className="mg-lady-step">结果：{ev.result!.summary}</p>
 }
